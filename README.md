@@ -81,7 +81,6 @@ const sdkService = new SdkService()
 
 sdkService.init().then(() => {
   sdkService.emitLoaded()
-  sdkService.onChangeState(router)
   // Other SDK methods...
 })
 
@@ -93,6 +92,29 @@ app.use(router).mount('#app')
 For more advanced use cases, such as the full API implementation, it is recommended to deploy an Express.js server. A ready-to-use template is available here:
 
 - [Express.js Bastyon MiniApp Template](https://github.com/DaniilKimlb/bastyon-miniapp-expressjs-template)
+
+## **Important Note for Publication**
+
+When publishing your project, ensure that the following two files are included in the **`public`** directory:
+
+1. **`b_manifest`** – This file is essential for describing your mini-application and its settings.
+2. **`b_icon.png`** – This icon will be displayed as the app icon within the platform.
+
+Make sure both files are placed in the `public/` directory before publishing to avoid any issues with deployment.
+
+Example directory structure for publication:
+
+```
+project-root/
+├── public/
+│   ├── b_manifest      # Mini-app metadata
+│   ├── b_icon.png      # Application icon
+├── src/
+├── dist/
+└── package.json
+```
+
+These files will ensure the smooth deployment and visibility of your app on the platform.
 
 ## Additional Tools
 
@@ -140,3 +162,5 @@ The production build will be available in the `dist/` folder.
 ## License
 
 This project is licensed under the Apache-2.0 License. See the [LICENSE](./LICENSE) file for more information.
+
+---

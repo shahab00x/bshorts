@@ -1,0 +1,16 @@
+{
+  "id": "example",
+  "name": "Example",
+  "version": "1.0.0",
+  "description": "A decentralized publishing and social platform.",
+  "descriptions": {
+    "en": "-",
+    "ru": "-"
+  },
+  "author": "-",
+  "develop": true,
+  "scope": "-",
+  "start_url": "-",
+  "icon": "b_icon.png",
+  "permissions": []
+}

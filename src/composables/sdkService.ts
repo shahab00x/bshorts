@@ -1,5 +1,5 @@
 /**
- * Note: If you need to use the full version of the API, it is recommended
+ * Note: If you need to use the full version of the Proxy API, it is recommended
  * to deploy a server using the Express.js template.
  * Template available here: https://github.com/DaniilKimlb/bastyon-miniapp-expressjs-template
  */
@@ -11,6 +11,14 @@
  */
 export default class SdkService {
   private sdk: any
+  private static instance: SdkService | null = null
+
+  public static getInstance(): SdkService {
+    if (!SdkService.instance)
+      SdkService.instance = new SdkService()
+
+    return SdkService.instance
+  }
 
   /**
    * Constructs the SdkService and initializes the Bastyon SDK instance.
@@ -22,6 +30,24 @@ export default class SdkService {
     // eslint-disable-next-line ts/ban-ts-comment
     // @ts-expect-error
     this.sdk = new window.BastyonSdk()
+  }
+
+  /**
+   * Example of how to use RPC calls with the Bastyon SDK.
+   *
+   * @returns {Promise<any>} A promise that resolves with the node information.
+   * @example
+   * sdkService.getNodeInfo().then((nodeInfo) => {
+   *     console.log('Node Info:', nodeInfo);
+   * });
+   *
+   * @remarks
+   * This method demonstrates how to perform an RPC call to fetch node information.
+   * You can find other available RPC methods in the documentation here:
+   * https://github.com/DaniilKimlb/pocketnet-proxy-api/blob/master/docs/rpc-methods.md
+   */
+  async getNodeInfo() {
+    return this.sdk.rpc('getnodeinfo')
   }
 
   /**
