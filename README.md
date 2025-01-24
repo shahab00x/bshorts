@@ -23,98 +23,213 @@ tags:
 <b>Integrate Bastyon SDK in Vue 3 for Decentralized Applications</b>
 </h5>
 
+---
+
 ## Features
 
 - 🚀 [Vue 3](https://github.com/vuejs/core), [Vite](https://github.com/vitejs/vite), [pnpm](https://pnpm.io/) - Fast and modern front-end tools.
-- 🌐 [Bastyon SDK](https://bastyon.com) - Decentralized, censorship-resistant platform integration.
+- 🌐 [Bastyon SDK](https://bastyon.com/application?id=app.pocketnet.docs&p=6465762f617070732f6d696e69617070732f73646b2e68746d6c) - Decentralized, censorship-resistant platform integration.
 - 📂 [File-based routing](./src/pages) - Auto-configured routing.
 - 📥 [Components auto importing](./src/components) - Automatically import components.
 
-## Directory Structure
+---
+
+## **Directory Structure**
 
 ```bash
 src/
 ├── composables/
-│   └── sdkService.ts  # Contains logic for interacting with the Bastyon SDK
-│   └── dark.ts  # Handles dark mode toggle functionality
-│   └── index.ts  # Exports utilities and composables from the directory
+│   ├── sdkService.ts  # Contains logic for interacting with the Bastyon SDK
+│   ├── dark.ts        # Handles dark mode toggle functionality
+│   └── index.ts       # Exports utilities and composables from the directory
 ├── components/
-│   └── TheFooter.vue  # Footer component for the app
-│   └── TheCounter.vue  # Counter component
-│   └── TheInput.vue  # Input component for handling user inputs
+│   ├── TheFooter.vue  # Footer component for the app
+│   ├── TheCounter.vue # Counter component
+│   └── TheInput.vue   # Input component for handling user inputs
 ├── pages/
-│   └── index.vue  # Main page of the application
-│   └── [...all].vue  # Catch-all route handler
+│   ├── index.vue      # Main page of the application
+│   ├── [...all].vue   # Catch-all route handler
 │   └── hi/[name].vue  # Dynamic route for user-specific pages
 ├── router/
-│   └── index.ts  # Vue Router configuration
+│   └── index.ts       # Vue Router configuration
 ├── styles/
-│   └── main.css  # Global styles for the application
-├── App.vue  # Root Vue component
-└── main.ts  # Entry point of the application
+│   └── main.css       # Global styles for the application
+├── App.vue            # Root Vue component
+└── main.ts            # Entry point of the application
 ```
 
-## Bastyon SDK
+---
 
-This project includes Bastyon SDK integration to communicate with the decentralized platform. The SDK allows you to manage application state, trigger events, and interact with the Bastyon API.
+## **Bastyon SDK**
 
-### Key SDK Features
+This project includes Bastyon SDK integration, which is essential for building mini-applications that interact with the decentralized Bastyon platform. The SDK enables your application to:
 
-- **State Management**: Handle and listen to state changes via SDK events.
-- **Decentralized Actions**: Communicate with the Bastyon platform for user actions, balance updates, and more.
-- **App Info**: Retrieve relevant information from the Bastyon app.
+- Access and use the Bastyon API for various functionalities.
+- Manage application state and listen to platform events.
+- Perform secure interactions, such as RPC calls and user actions.
 
-## Example Usage
+The SDK is the primary tool for integrating mini-applications into the Bastyon ecosystem, allowing seamless communication between your app and the platform.
 
-### Initialization of Bastyon SDK
+### **TypeScript Support**
 
-In `src/main.ts`, you will find how the Bastyon SDK is initialized and configured:
+The Bastyon SDK offers full TypeScript support through a dedicated type definitions package. These definitions provide strongly typed interfaces for SDK events, methods, and responses, allowing you to:
+
+- Write safer and more predictable code.
+- Detect potential issues during development.
+- Enjoy a smoother integration process with Bastyon API.
+
+For detailed information about available types and how to use them, refer to the official type definitions package:
+
+- 📘 [Type Definitions for Bastyon SDK](https://github.com/DaniilKimlb/types-bastyon-sdk/blob/master/README.md)
+
+### **Learn More**:
+
+- 📘 [Bastyon SDK Reference Documentation](https://bastyon.com/application?id=app.pocketnet.docs&p=6465762f617070732f6d696e69617070732f73646b2e68746d6c)
+- 📘 [How to Create Web Applications on Bastyon](https://bastyon.com/application?id=app.pocketnet.docs)
+
+---
+
+## **Example Usage**
+
+### **Initialization of Bastyon SDK**
+
+The Bastyon SDK must be initialized at the very beginning of your application lifecycle to ensure the platform recognizes your mini-application as ready.
+
+#### Example in `src/main.ts`:
 
 ```typescript
 import { createApp } from 'vue'
+import { createRouter, createWebHistory } from 'vue-router/auto'
 import App from './App.vue'
-import router from './router'
-import SdkService from './composables/sdkService'
+
+import '@unocss/reset/tailwind.css'
+import './styles/main.css'
+import 'uno.css'
+
+import { SdkService } from './composables/sdkService'
 
 const app = createApp(App)
-const sdkService = new SdkService()
-
-sdkService.init().then(() => {
-  sdkService.emitLoaded()
-  // Other SDK methods...
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
 })
 
-app.use(router).mount('#app')
+app.use(router)
+app.mount('#app')
+
+// Initialize the Bastyon SDK
+SdkService.init()
 ```
 
-## Full API Integration
+Once initialized, the SDK automatically emits the `loaded` event to notify the platform that the app is ready.
 
-For more advanced use cases, such as the full API implementation, it is recommended to deploy an Express.js server. A ready-to-use template is available here:
+---
 
-- [Express.js Bastyon MiniApp Template](https://github.com/DaniilKimlb/bastyon-miniapp-expressjs-template)
+### **Basic SDK Methods**
+
+After initialization, you can use the following methods to interact with the Bastyon platform:
+
+1. **Opening an External Link**:
+
+   ```typescript
+   SdkService.openExternalLink('https://example.com')
+   ```
+
+2. **Fetching Application Information**:
+
+   ```typescript
+   SdkService.getAppInfo().then((info) => {
+     console.log('App Info:', info)
+   })
+   ```
+
+3. **Performing an RPC Call**:
+
+   ```typescript
+   SdkService.rpc('getnodeinfo').then((info) => {
+     console.log('Node Info:', info)
+   }).catch((error) => {
+     console.error('RPC Call Failed:', error)
+   })
+   ```
+
+4. **Adding Event Listeners**:
+
+   ```typescript
+   SdkService.on('balance', (data) => {
+     console.log('Balance updated:', data)
+   })
+   ```
+
+5. **Requesting Permissions**:
+   ```typescript
+   SdkService.checkAndRequestPermissions(['account', 'payment']).then(() => {
+     console.log('Permissions granted')
+   }).catch((error) => {
+     console.error('Permission request failed:', error)
+   })
+   ```
+
+---
 
 ## **Important Note for Publication**
 
-When publishing your project, ensure that the following two files are included in the **`public`** directory:
+When publishing your project, ensure that the following files are included in the **`public`** directory:
 
 1. **`b_manifest`** – This file is essential for describing your mini-application and its settings.
 2. **`b_icon.png`** – This icon will be displayed as the app icon within the platform.
 
-Make sure both files are placed in the `public/` directory before publishing to avoid any issues with deployment.
+Additionally, if you plan to test your mini-application locally, **it is mandatory to run your application on HTTPS**. Bastyon requires secure connections even during development. For this, you can use self-signed SSL certificates.
 
-Example directory structure for publication:
+### How to Generate Self-Signed Certificates:
 
-```
+1. **Generate Certificates Using OpenSSL**:
+
+   ```bash
+   openssl req -x509 -newkey rsa:4096 -keyout localhost-key.pem -out localhost.pem -days 365 -nodes
+   ```
+
+2. **Trust the Certificate** (optional, to avoid browser warnings):
+
+   - **Mac**: Add the `.pem` file to Keychain and set it to "Always Trust."
+   - **Windows**: Import the certificate into "Trusted Root Certification Authorities."
+   - **Linux**: Add the `.pem` file to `/usr/local/share/ca-certificates/` and run:
+     ```bash
+     sudo update-ca-certificates
+     ```
+
+3. **Configure Vite for HTTPS**:
+
+   ```typescript
+   import fs from 'node:fs'
+   import { defineConfig } from 'vite'
+
+   export default defineConfig({
+     server: {
+       https: {
+         key: fs.readFileSync('./localhost-key.pem'),
+         cert: fs.readFileSync('./localhost.pem'),
+       },
+     },
+   })
+   ```
+
+---
+
+### **Example Directory Structure**
+
+```bash
 project-root/
 ├── public/
 │   ├── b_manifest      # Mini-app metadata
 │   ├── b_icon.png      # Application icon
 ├── src/
 ├── dist/
+├── localhost-key.pem   # Self-signed private key for HTTPS
+├── localhost.pem       # Self-signed certificate for HTTPS
 └── package.json
 ```
 
-These files will ensure the smooth deployment and visibility of your app on the platform.
+These files ensure smooth deployment and visibility of your app on the Bastyon platform while also enabling secure local testing.
 
 ## Additional Tools
 

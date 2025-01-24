@@ -1,6 +1,7 @@
 /// <reference types="vitest" />
 
 import path from 'node:path'
+import fs from 'node:fs'
 import { defineConfig } from 'vite'
 import Vue from '@vitejs/plugin-vue'
 import Components from 'unplugin-vue-components/vite'
@@ -60,7 +61,12 @@ export default defineConfig({
     // see uno.config.ts for config
     UnoCSS(),
   ],
-
+  server: {
+    https: {
+      key: fs.readFileSync('./localhost-key.pem'),
+      cert: fs.readFileSync('./localhost.pem'),
+    },
+  },
   // https://github.com/vitest-dev/vitest
   test: {
     environment: 'jsdom',

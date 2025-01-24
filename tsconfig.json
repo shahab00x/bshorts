@@ -11,6 +11,7 @@
     },
     "resolveJsonModule": true,
     "types": [
+      "bastyon-sdk",
       "vite/client",
       "unplugin-vue-macros/macros-global",
       "unplugin-vue-router/client"

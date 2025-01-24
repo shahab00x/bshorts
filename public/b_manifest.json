@@ -1,16 +1,7 @@
 {
-  "id": "example",
-  "name": "Example",
-  "version": "1.0.0",
-  "description": "A decentralized publishing and social platform.",
-  "descriptions": {
-    "en": "-",
-    "ru": "-"
-  },
-  "author": "-",
-  "develop": true,
-  "scope": "-",
-  "start_url": "-",
-  "icon": "b_icon.png",
+  "id": "demo.app",
+  "name": "Demo",
+  "description": "Demo application",
+  "author": "TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydG",
   "permissions": []
 }

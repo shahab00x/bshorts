@@ -1,158 +1,149 @@
 /**
- * Note: If you need to use the full version of the Proxy API, it is recommended
- * to deploy a server using the Express.js template.
- * Template available here: https://github.com/DaniilKimlb/bastyon-miniapp-expressjs-template
- */
-
-/**
- * SdkService class for initializing and managing Bastyon SDK interactions.
+ * Bastyon SdkService: Simplified integration with Bastyon SDK.
+ * Documentation: https://bastyon.com/application?id=app.pocketnet.docs&p=6465762f617070732f6d696e69617070732f73646b2e68746d6c
  *
- * This class handles initialization, event listeners, and API calls with the Bastyon SDK.
+ * For secure execution of payments and RPC calls, it is recommended to use the ready-to-use Express.js template:
+ * https://github.com/DaniilKimlb/bastyon-miniapp-expressjs-template.
+ * This template already includes the `pocketnet-proxy-api` library, simplifying interaction with the Bastyon API.
  */
-export default class SdkService {
-  private sdk: any
-  private static instance: SdkService | null = null
-
-  public static getInstance(): SdkService {
-    if (!SdkService.instance)
-      SdkService.instance = new SdkService()
-
-    return SdkService.instance
-  }
+export class SdkService {
+  private static sdk: BastyonSdk | null = null
 
   /**
-   * Constructs the SdkService and initializes the Bastyon SDK instance.
-   *
-   * @remarks
-   * If you need to interact with the Bastyon API, this class should be instantiated and initialized.
-   */
-  constructor() {
-    // eslint-disable-next-line ts/ban-ts-comment
-    // @ts-expect-error
-    this.sdk = new window.BastyonSdk()
-  }
-
-  /**
-   * Example of how to use RPC calls with the Bastyon SDK.
-   *
-   * @returns {Promise<any>} A promise that resolves with the node information.
-   * @example
-   * sdkService.getNodeInfo().then((nodeInfo) => {
-   *     console.log('Node Info:', nodeInfo);
-   * });
-   *
-   * @remarks
-   * This method demonstrates how to perform an RPC call to fetch node information.
-   * You can find other available RPC methods in the documentation here:
-   * https://github.com/DaniilKimlb/pocketnet-proxy-api/blob/master/docs/rpc-methods.md
-   */
-  async getNodeInfo() {
-    return this.sdk.rpc('getnodeinfo')
-  }
-
-  /**
-   * Initializes the Bastyon SDK.
-   *
-   * @returns {Promise<void>} A promise that resolves when the SDK has been successfully initialized.
-   * @example
-   * const sdkService = new SdkService();
-   * sdkService.init().then(() => {
-   *     console.log('SDK initialized');
-   * });
-   */
-  async init(): Promise<void> {
-    await this.sdk.init()
-    console.log('Bastyon SDK initialized')
-  }
-
-  /**
-   * Emits the 'loaded' event to notify that the application has been loaded.
+   * Initializes the Bastyon SDK at the very start of the application lifecycle.
+   * Must be called before any other SDK interactions.
+   * Emits the `loaded` event to notify the platform that the application is ready.
    *
    * @example
-   * sdkService.emitLoaded();
+   * await SdkService.init();
    */
-  emitLoaded(): void {
-    this.sdk.emit('loaded')
+  public static async init(): Promise<void> {
+    if (this.sdk) {
+      console.warn('Bastyon SDK is already initialized.')
+      return
+    }
+
+    try {
+      this.sdk = new window.BastyonSdk()
+      await this.sdk.init()
+      this.sdk.emit('loaded') // Notify the platform that the app is ready
+      console.log('Bastyon SDK successfully initialized.')
+    }
+    catch (error) {
+      console.error('Error initializing Bastyon SDK:', error)
+      throw error // Re-throw error for handling at a higher level
+    }
   }
 
   /**
-   * Sets up a listener for the 'changestate' event.
-   * When the state changes, the router will navigate to the corresponding route.
-   *
-   * @param router - The router instance used for navigation.
-   * @example
-   * sdkService.onChangeState(router);
+   * Ensures the SDK is initialized before calling other methods.
+   * Throws an error if the SDK is not initialized.
    */
-  onChangeState(router: any): void {
-    this.sdk.on('changestate', (data: any) => {
-      router.push(this.sdk.getroute(data))
+  private static ensureInitialized(): void {
+    if (!this.sdk) {
+      throw new Error(
+        'Bastyon SDK is not initialized. Call SdkService.init() at the start of the application.',
+      )
+    }
+  }
+
+  /**
+   * Opens an external link using the Bastyon platform.
+   * @param url The URL to open.
+   * @example
+   * SdkService.openExternalLink('https://example.com');
+   */
+  public static openExternalLink(url: string): void {
+    this.ensureInitialized()
+    this.sdk!.openExternalLink(url).catch((error) => {
+      console.error('Error opening external link:', error)
     })
   }
 
   /**
-   * Sets up a listener for the 'action' event.
-   * This event is triggered when a specific action occurs in the application.
-   *
+   * Example of an RPC call. It is recommended to use a server for secure execution.
+   * @param method The RPC method to call.
+   * @param parameters The parameters for the method.
+   * @returns Promise<unknown> The result of the RPC call.
    * @example
-   * sdkService.onAction();
+   * SdkService.rpc('getnodeinfo').then((info) => console.log(info));
    */
-  onAction(): void {
-    this.sdk.on('action', () => {
-      console.log('An action occurred in the application.')
-    })
+  public static async rpc(method: string, parameters?: unknown[]): Promise<unknown> {
+    this.ensureInitialized()
+    try {
+      const result = await this.sdk!.rpc(method, parameters)
+      return result
+    }
+    catch (error) {
+      console.error('Error during RPC call:', error)
+      throw error
+    }
   }
 
   /**
-   * Sets up a listener for the 'balance' event.
-   * Triggered when the user's balance is updated.
-   *
+   * Adds an event listener for a specific SDK event.
+   * @param event The event name to listen to.
+   * @param callback The callback function to handle the event data.
    * @example
-   * sdkService.onBalance();
+   * SdkService.on('balance', (data) => console.log('Balance updated:', data));
    */
-  onBalance(): void {
-    this.sdk.on('balance', () => {
-      console.log('The user\'s balance has been updated.')
-    })
+  public static on(event: BastyonSdkEvents, callback: (data: unknown) => void): void {
+    this.ensureInitialized()
+    this.sdk!.on(event, callback)
   }
 
   /**
-   * Sets up a listener for the 'state' event.
-   * Triggered when the application state changes.
-   *
+   * Removes an event listener for a specific SDK event.
+   * @param event The event name to remove the listener from.
+   * @param callback The callback function to remove.
    * @example
-   * sdkService.onState();
+   * const handler = (data) => console.log('Balance updated:', data);
+   * SdkService.on('balance', handler);
+   * SdkService.off('balance', handler);
    */
-  onState(): void {
-    this.sdk.on('state', () => {
-      console.log('The application state has changed.')
-    })
+  public static off(event: BastyonSdkEvents, callback: (data: unknown) => void): void {
+    this.ensureInitialized()
+    this.sdk!.off(event, callback)
   }
 
   /**
-   * Sets up a listener for the 'keyboard' event.
-   * Triggered when there is interaction with the keyboard.
-   *
+   * Fetches application information from the Bastyon SDK.
+   * @returns Promise<ApplicationInfo> The application information.
    * @example
-   * sdkService.onKeyboard();
+   * SdkService.getAppInfo().then((info) => console.log('App info:', info));
    */
-  onKeyboard(): void {
-    this.sdk.on('keyboard', () => {
-      console.log('Keyboard interaction detected.')
-    })
+  public static async getAppInfo(): Promise<ApplicationInfo> {
+    this.ensureInitialized()
+    try {
+      const info = await this.sdk!.get.appinfo()
+      return info
+    }
+    catch (error) {
+      console.error('Error fetching application information:', error)
+      throw error
+    }
   }
 
   /**
-   * Fetches the application information from the Bastyon SDK.
-   *
-   * @returns {Promise<any>} A promise that resolves with the application information.
+   * Checks and requests permissions.
+   * @param permissions The list of permissions to check and request if needed.
+   * @returns Promise<void>
    * @example
-   * sdkService.getAppInfo().then((appInfo) => {
-   *     console.log(appInfo);
-   * });
+   * SdkService.checkAndRequestPermissions(['account', 'payment']);
    */
-  async getAppInfo(): Promise<any> {
-    const appInfo = await this.sdk.get.appinfo()
-    console.log('Application information:', appInfo)
-    return appInfo
+  public static async checkAndRequestPermissions(permissions: string[]): Promise<void> {
+    this.ensureInitialized()
+    try {
+      for (const permission of permissions) {
+        const granted = await this.sdk!.permissions.check({ permission })
+        if (!granted)
+          await this.sdk!.permissions.request([permission])
+      }
+      console.log('All required permissions granted:', permissions)
+    }
+    catch (error) {
+      console.error('Error checking or requesting permissions:', error)
+      throw error
+    }
   }
 }
