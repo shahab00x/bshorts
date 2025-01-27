@@ -175,10 +175,15 @@ After initialization, you can use the following methods to interact with the Bas
 
 When publishing your project, ensure that the following files are included in the **`public`** directory:
 
-1. **`b_manifest`** – This file is essential for describing your mini-application and its settings.
-2. **`b_icon.png`** – This icon will be displayed as the app icon within the platform.
+1. **[`b_manifest`](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#b-manifest-json)** – This file is essential for describing your mini-application and its settings. You can find more information about the structure and requirements of this file [here](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#b-manifest-json).
+2. **[`b_icon.png`](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#b-icon-png)** – This icon will be displayed as the app icon within the platform. Learn about its specifications [here](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#b-icon-png).
 
-Additionally, if you plan to test your mini-application locally, **it is mandatory to run your application on HTTPS**. Bastyon requires secure connections even during development. For this, you can use self-signed SSL certificates.
+For general guidelines and a complete overview, refer to the official Bastyon documentation on [mini-app setup](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#step-1-domain-preparation).
+
+Additionally, if you plan to test your mini-application locally:
+
+1. **It is mandatory to run your application on HTTPS.** Bastyon requires secure connections even during development. You can use self-signed SSL certificates to set up HTTPS.
+2. **Consider setting up a local domain as your development domain.** This step simplifies testing and ensures compatibility with Bastyon's domain-related requirements. Refer to the [domain preparation section](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#step-1-domain-preparation) for more details on setting up domains.
 
 ### How to Generate Self-Signed Certificates:
 
