@@ -180,10 +180,10 @@ When publishing your project, ensure that the following files are included in th
 
 For general guidelines and a complete overview, refer to the official Bastyon documentation on [mini-app setup](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#step-1-domain-preparation).
 
-Additionally, if you plan to test your mini-application locally:
+Bastyon requires all applications, including those tested locally, to run on **HTTPS**. This ensures secure connections and compliance with platform requirements, even during development.
 
-1. **It is mandatory to run your application on HTTPS.** Bastyon requires secure connections even during development. You can use self-signed SSL certificates to set up HTTPS.
-2. **Consider setting up a local domain as your development domain.** This step simplifies testing and ensures compatibility with Bastyon's domain-related requirements. Refer to the [domain preparation section](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#step-1-domain-preparation) for more details on setting up domains.
+1. **Use Self-Signed SSL Certificates:** To meet the HTTPS requirement for local testing, you can set up self-signed SSL certificates. This is a simple and effective way to enable HTTPS on your local server.
+2. **Specify a Dev Domain:** If you plan to use a local domain for testing, it is **mandatory to specify a Dev Domain** during the setup process. Without filling in the Dev Domain field, adding a local domain will not be possible. This ensures compatibility with Bastyon's domain-related requirements.
 
 ### How to Generate Self-Signed Certificates:
 
