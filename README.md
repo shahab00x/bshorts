@@ -1,13 +1,15 @@
 ---
 
-title: Vue 3 with Bastyon SDK
-description: A Vue 3 project integrating Bastyon SDK for decentralized application interactions
+title: Vue 3 with Bastyon SDK and Service Worker
+description: A Vue 3 project integrating Bastyon SDK for decentralized application interactions with Service Worker support for Tor transport
 tags:
   - Node
   - Vue 3
   - Vite
   - TypeScript
   - Bastyon SDK
+  - Service Worker
+  - Tor
 
 ---
 
@@ -20,17 +22,19 @@ tags:
 </h6>
 
 <h5 align='center'>
-<b>Integrate Bastyon SDK in Vue 3 for Decentralized Applications</b>
+<b>Integrate Bastyon SDK in Vue 3 for Decentralized Applications with Privacy-First Design</b>
 </h5>
 
 ---
 
 ## Features
 
-- 🚀 [Vue 3](https://github.com/vuejs/core), [Vite](https://github.com/vitejs/vite), [pnpm](https://pnpm.io/) - Fast and modern front-end tools.
-- 🌐 [Bastyon SDK](https://bastyon.com/application?id=app.pocketnet.docs&p=6465762f617070732f6d696e69617070732f73646b2e68746d6c) - Decentralized, censorship-resistant platform integration.
-- 📂 [File-based routing](./src/pages) - Auto-configured routing.
-- 📥 [Components auto importing](./src/components) - Automatically import components.
+- 🚀 [Vue 3](https://github.com/vuejs/core), [Vite](https://github.com/vitejs/vite), [pnpm](https://pnpm.io/) - Fast and modern front-end tools
+- 🌐 [Bastyon SDK](https://bastyon.com/application?id=app.pocketnet.docs&p=6465762f617070732f6d696e69617070732f73646b2e68746d6c) - Decentralized, censorship-resistant platform integration
+- 🔒 **Privacy-First** - Automatic Tor routing for external requests when available
+- 📂 [File-based routing](./src/pages) - Auto-configured routing
+- 📥 [Components auto importing](./src/components) - Automatically import components
+- ⚡ **Zero Configuration** - Works out of the box with enhanced privacy
 
 ---
 
@@ -39,23 +43,28 @@ tags:
 ```bash
 src/
 ├── composables/
-│   ├── sdkService.ts  # Contains logic for interacting with the Bastyon SDK
-│   ├── dark.ts        # Handles dark mode toggle functionality
-│   └── index.ts       # Exports utilities and composables from the directory
+│   ├── sdkService.ts     # Contains logic for interacting with the Bastyon SDK
+│   ├── serviceWorker.ts  # Service Worker management and Tor integration
+│   ├── dark.ts           # Handles dark mode toggle functionality
+│   └── index.ts          # Exports utilities and composables from the directory
 ├── components/
-│   ├── TheFooter.vue  # Footer component for the app
-│   ├── TheCounter.vue # Counter component
-│   └── TheInput.vue   # Input component for handling user inputs
+│   ├── TheFooter.vue     # Footer component for the app
+│   ├── TheCounter.vue    # Counter component
+│   └── TheInput.vue      # Input component for handling user inputs
 ├── pages/
-│   ├── index.vue      # Main page of the application
-│   ├── [...all].vue   # Catch-all route handler
-│   └── hi/[name].vue  # Dynamic route for user-specific pages
+│   ├── index.vue         # Main page of the application
+│   ├── [...all].vue      # Catch-all route handler
+│   └── hi/[name].vue     # Dynamic route for user-specific pages
 ├── router/
-│   └── index.ts       # Vue Router configuration
+│   └── index.ts          # Vue Router configuration
 ├── styles/
-│   └── main.css       # Global styles for the application
-├── App.vue            # Root Vue component
-└── main.ts            # Entry point of the application
+│   └── main.css          # Global styles for the application
+├── App.vue               # Root Vue component
+└── main.ts               # Entry point of the application
+public/
+├── miniapp-service-worker.js  # Service Worker for request proxying
+├── b_manifest.json            # Mini-app metadata
+└── b_icon.png                 # Application icon
 ```
 
 ---
@@ -64,9 +73,10 @@ src/
 
 This project includes Bastyon SDK integration, which is essential for building mini-applications that interact with the decentralized Bastyon platform. The SDK enables your application to:
 
-- Access and use the Bastyon API for various functionalities.
-- Manage application state and listen to platform events.
-- Perform secure interactions, such as RPC calls and user actions.
+- Access and use the Bastyon API for various functionalities
+- Manage application state and listen to platform events
+- Perform secure interactions, such as RPC calls and user actions
+- **Automatic privacy enhancement** through integrated Service Worker
 
 The SDK is the primary tool for integrating mini-applications into the Bastyon ecosystem, allowing seamless communication between your app and the platform.
 
@@ -74,9 +84,9 @@ The SDK is the primary tool for integrating mini-applications into the Bastyon e
 
 The Bastyon SDK offers full TypeScript support through a dedicated type definitions package. These definitions provide strongly typed interfaces for SDK events, methods, and responses, allowing you to:
 
-- Write safer and more predictable code.
-- Detect potential issues during development.
-- Enjoy a smoother integration process with Bastyon API.
+- Write safer and more predictable code
+- Detect potential issues during development
+- Enjoy a smoother integration process with Bastyon API
 
 For detailed information about available types and how to use them, refer to the official type definitions package:
 
@@ -91,9 +101,9 @@ For detailed information about available types and how to use them, refer to the
 
 ## **Example Usage**
 
-### **Initialization of Bastyon SDK**
+### **Basic Initialization**
 
-The Bastyon SDK must be initialized at the very beginning of your application lifecycle to ensure the platform recognizes your mini-application as ready.
+The Bastyon SDK and Service Worker are initialized at the very beginning of your application lifecycle.
 
 #### Example in `src/main.ts`:
 
@@ -107,6 +117,7 @@ import './styles/main.css'
 import 'uno.css'
 
 import { SdkService } from './composables/sdkService'
+import { initServiceWorker } from './composables/serviceWorker'
 
 const app = createApp(App)
 const router = createRouter({
@@ -118,11 +129,34 @@ app.mount('#app')
 
 // Initialize the Bastyon SDK
 SdkService.init()
+
+// Initialize Service Worker for enhanced privacy
+initServiceWorker().then(() => {
+  console.log('🔒 Service Worker initialized - requests will be proxied through Tor when available')
+}).catch((error) => {
+  console.log('ℹ️ Service Worker not available:', error.message)
+})
 ```
 
-Once initialized, the SDK automatically emits the `loaded` event to notify the platform that the app is ready.
+### **Making API Requests**
 
----
+Your existing code doesn't need to change - enhanced privacy works automatically:
+
+```typescript
+// This request will automatically be proxied through Tor if available
+fetch('https://api.github.com/users/octocat')
+  .then(response => response.json())
+  .then((data) => {
+    console.log('✅ Data received through Tor:', data)
+  })
+
+// This request to Bastyon will NOT be proxied (direct for performance)
+fetch('https://bastyon.com/api/some-endpoint')
+  .then(response => response.json())
+  .then((data) => {
+    console.log('✅ Direct request to Bastyon:', data)
+  })
+```
 
 ### **Basic SDK Methods**
 
@@ -139,6 +173,7 @@ After initialization, you can use the following methods to interact with the Bas
    ```typescript
    SdkService.getAppInfo().then((info) => {
      console.log('App Info:', info)
+     console.log('Tor Available:', info.alttransport)
    })
    ```
 
@@ -171,19 +206,94 @@ After initialization, you can use the following methods to interact with the Bas
 
 ---
 
+## **Privacy & Service Worker Integration**
+
+### **Enhanced Privacy Through Tor**
+
+This template automatically routes external API requests through Bastyon's Tor network when available, providing:
+
+- 🔒 **IP Anonymization** - Your real IP is hidden from external services
+- 🌍 **Censorship Resistance** - Access APIs even in restricted networks
+- ⚡ **Zero Configuration** - Works automatically, no setup required
+- 🔄 **Smart Filtering** - Only external requests are proxied
+
+### **How It Works**
+
+1. **Automatic Registration**: Service Worker is automatically registered when the app loads
+2. **Request Interception**: All external HTTP/HTTPS requests are intercepted
+3. **Smart Filtering**: Only external API requests are proxied - local and Bastyon requests are passed through normally
+4. **Tor Integration**: Requests are automatically routed through Tor when available in Bastyon
+5. **Transparent Operation**: Your application code remains unchanged - `fetch()` works as usual
+
+### **What Gets Proxied**
+
+✅ **Proxied through Tor:**
+
+- `https://api.github.com/users/octocat`
+- `https://jsonplaceholder.typicode.com/posts`
+- Any external API calls
+
+❌ **Direct requests (not proxied):**
+
+- `https://bastyon.com/js/lib/apps/sdk.js` - Bastyon resources
+- `http://localhost:3000/` - Your application
+- `chrome-extension://...` - Browser extensions
+- `blob:` and `data:` URLs
+
+### **Service Worker Management**
+
+The Service Worker is managed automatically, but you can check its status:
+
+```typescript
+import { useServiceWorker } from './composables/serviceWorker'
+
+const { init, isActive, getAppInfo } = useServiceWorker()
+
+// Check if Service Worker is active
+if (isActive())
+  console.log('🔒 Service Worker is active - requests are being proxied')
+
+// Get app information including Tor availability
+getAppInfo().then((info) => {
+  console.log('Tor available:', info.alttransport)
+  console.log('Service Worker support:', info.supportsServiceWorkerProxy)
+})
+```
+
+### **Security Considerations**
+
+- ✅ Service Worker only processes external HTTP/HTTPS requests
+- ✅ Bastyon and local resources use direct connections for performance
+- ✅ Browser extensions and special protocols are never intercepted
+- ✅ Graceful fallback to direct requests when Tor is unavailable
+
+---
+
 ## **Important Note for Publication**
 
 When publishing your project, ensure that the following files are included in the **`public`** directory:
 
-1. **[`b_manifest`](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#b-manifest-json)** – This file is essential for describing your mini-application and its settings. You can find more information about the structure and requirements of this file [here](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#b-manifest-json).
-2. **[`b_icon.png`](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#b-icon-png)** – This icon will be displayed as the app icon within the platform. Learn about its specifications [here](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#b-icon-png).
+1. **[`b_manifest.json`](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#b-manifest-json)** – This file is essential for describing your mini-application and its settings
+2. **[`b_icon.png`](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#b-icon-png)** – This icon will be displayed as the app icon within the platform
+3. **`miniapp-service-worker.js`** – Service Worker file that handles request proxying through Tor
 
-For general guidelines and a complete overview, refer to the official Bastyon documentation on [mini-app setup](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#step-1-domain-preparation).
+### **Service Worker Configuration**
 
-Bastyon requires all applications, including those tested locally, to run on **HTTPS**. This ensures secure connections and compliance with platform requirements, even during development.
+The Service Worker is automatically configured to:
 
-1. **Use Self-Signed SSL Certificates:** To meet the HTTPS requirement for local testing, you can set up self-signed SSL certificates. This is a simple and effective way to enable HTTPS on your local server.
-2. **Specify a Dev Domain:** If you plan to use a local domain for testing, it is **mandatory to specify a Dev Domain** during the setup process. Without filling in the Dev Domain field, adding a local domain will not be possible. This ensures compatibility with Bastyon's domain-related requirements.
+- ✅ Proxy external API requests through Tor
+- ✅ Allow direct access to Bastyon resources
+- ✅ Skip browser extensions and local resources
+- ✅ Provide graceful fallback when Tor is unavailable
+
+No additional configuration is required - it works out of the box!
+
+### **HTTPS Requirements**
+
+Bastyon requires all applications, including those tested locally, to run on **HTTPS**. This is especially important for Service Workers, which only work over HTTPS.
+
+1. **Use Self-Signed SSL Certificates:** Generate certificates for local development
+2. **Specify a Dev Domain:** Required for adding local domains to Bastyon
 
 ### How to Generate Self-Signed Certificates:
 
@@ -193,16 +303,7 @@ Bastyon requires all applications, including those tested locally, to run on **H
    openssl req -x509 -newkey rsa:4096 -keyout localhost-key.pem -out localhost.pem -days 365 -nodes
    ```
 
-2. **Trust the Certificate** (optional, to avoid browser warnings):
-
-   - **Mac**: Add the `.pem` file to Keychain and set it to "Always Trust."
-   - **Windows**: Import the certificate into "Trusted Root Certification Authorities."
-   - **Linux**: Add the `.pem` file to `/usr/local/share/ca-certificates/` and run:
-     ```bash
-     sudo update-ca-certificates
-     ```
-
-3. **Configure Vite for HTTPS**:
+2. **Configure Vite for HTTPS with Service Worker support**:
 
    ```typescript
    import fs from 'node:fs'
@@ -214,48 +315,62 @@ Bastyon requires all applications, including those tested locally, to run on **H
          key: fs.readFileSync('./localhost-key.pem'),
          cert: fs.readFileSync('./localhost.pem'),
        },
+       headers: {
+         'Service-Worker-Allowed': '/'
+       }
      },
+     build: {
+       rollupOptions: {
+         input: {
+           main: 'index.html',
+           sw: 'public/miniapp-service-worker.js'
+         }
+       }
+     }
    })
    ```
-
----
 
 ### **Example Directory Structure**
 
 ```bash
 project-root/
 ├── public/
-│   ├── b_manifest      # Mini-app metadata
-│   ├── b_icon.png      # Application icon
+│   ├── b_manifest.json            # Mini-app metadata
+│   ├── b_icon.png                 # Application icon
+│   └── miniapp-service-worker.js  # Service Worker for Tor proxying
 ├── src/
-├── dist/
-├── localhost-key.pem   # Self-signed private key for HTTPS
-├── localhost.pem       # Self-signed certificate for HTTPS
+│   └── composables/
+│       └── serviceWorker.ts       # Service Worker management
+├── dist/                          # Built application
+├── localhost-key.pem              # Self-signed private key for HTTPS
+├── localhost.pem                  # Self-signed certificate for HTTPS
 └── package.json
 ```
 
-These files ensure smooth deployment and visibility of your app on the Bastyon platform while also enabling secure local testing.
+---
 
 ## Additional Tools
 
 ### UI Frameworks
 
-- 🛠️ [UnoCSS](https://github.com/antfu/unocss) - Instant on-demand atomic CSS engine for efficient styling.
+- 🛠️ [UnoCSS](https://github.com/antfu/unocss) - Instant on-demand atomic CSS engine for efficient styling
 
 ### Icons
 
-- 🎨 [Iconify](https://iconify.design) - Use icons from any icon sets.
-- 🔍 [Icônes](https://icones.netlify.app/) - Search and use icons from multiple icon sets.
-- 💻 Pure CSS Icons via UnoCSS - Style icons directly with CSS using UnoCSS.
+- 🎨 [Iconify](https://iconify.design) - Use icons from any icon sets
+- 🔍 [Icônes](https://icones.netlify.app/) - Search and use icons from multiple icon sets
+- 💻 Pure CSS Icons via UnoCSS - Style icons directly with CSS using UnoCSS
 
 ### Plugins
 
-- 🗺️ [Vue Router](https://github.com/vuejs/vue-router) - Manages app routing.
-- 🗂️ [`unplugin-vue-router`](https://github.com/posva/unplugin-vue-router) - File system-based routing for easy route management.
-- 🔧 [`unplugin-auto-import`](https://github.com/antfu/unplugin-auto-import) - Automatically import Vue Composition API and other utilities without manually importing.
-- 🧩 [`unplugin-vue-components`](https://github.com/antfu/unplugin-vue-components) - Automatically import components, simplifying usage across the app.
-- 🔨 [`unplugin-vue-macros`](https://github.com/sxzz/unplugin-vue-macros) - Extend macros and add more syntax sugar to Vue.
-- 🧰 [VueUse](https://github.com/antfu/vueuse) - A collection of useful Vue Composition APIs to enhance functionality.
+- 🗺️ [Vue Router](https://github.com/vuejs/vue-router) - Manages app routing
+- 🗂️ [`unplugin-vue-router`](https://github.com/posva/unplugin-vue-router) - File system-based routing for easy route management
+- 🔧 [`unplugin-auto-import`](https://github.com/antfu/unplugin-auto-import) - Automatically import Vue Composition API and other utilities without manually importing
+- 🧩 [`unplugin-vue-components`](https://github.com/antfu/unplugin-vue-components) - Automatically import components, simplifying usage across the app
+- 🔨 [`unplugin-vue-macros`](https://github.com/sxzz/unplugin-vue-macros) - Extend macros and add more syntax sugar to Vue
+- 🧰 [VueUse](https://github.com/antfu/vueuse) - A collection of useful Vue Composition APIs to enhance functionality
+
+---
 
 ## How to Run
 
@@ -271,13 +386,17 @@ Run the development server:
 pnpm run dev
 ```
 
+Your application will be available at `https://localhost:3000` with Service Worker support for enhanced privacy.
+
 Build the project for production:
 
 ```bash
 pnpm run build
 ```
 
-The production build will be available in the `dist/` folder.
+The production build will be available in the `dist/` folder, including the Service Worker for Tor integration.
+
+---
 
 ## License
 
