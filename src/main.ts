@@ -6,14 +6,11 @@ import '@unocss/reset/tailwind.css'
 import './styles/main.css'
 import 'uno.css'
 import { SdkService } from './composables/sdkService'
-import { initServiceWorker } from './composables/serviceWorker'
 
 const app = createApp(App)
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
 })
-
-initServiceWorker()
 
 app.use(router)
 app.mount('#app')

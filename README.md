@@ -44,7 +44,6 @@ tags:
 src/
 ├── composables/
 │   ├── sdkService.ts     # Contains logic for interacting with the Bastyon SDK
-│   ├── serviceWorker.ts  # Service Worker management and Tor integration
 │   ├── dark.ts           # Handles dark mode toggle functionality
 │   └── index.ts          # Exports utilities and composables from the directory
 ├── components/
@@ -103,7 +102,7 @@ For detailed information about available types and how to use them, refer to the
 
 ### **Basic Initialization**
 
-The Bastyon SDK and Service Worker are initialized at the very beginning of your application lifecycle.
+The Bastyon SDK and Service Worker can be initialized at the very beginning of your application lifecycle.
 
 #### Example in `src/main.ts`:
 
@@ -116,9 +115,6 @@ import '@unocss/reset/tailwind.css'
 import './styles/main.css'
 import 'uno.css'
 
-import { SdkService } from './composables/sdkService'
-import { initServiceWorker } from './composables/serviceWorker'
-
 const app = createApp(App)
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -128,14 +124,48 @@ app.use(router)
 app.mount('#app')
 
 // Initialize the Bastyon SDK
-SdkService.init()
+const SDK = new BastyonSdk()
+await SDK.init()
 
-// Initialize Service Worker for enhanced privacy
-initServiceWorker().then(() => {
-  console.log('🔒 Service Worker initialized - requests will be proxied through Tor when available')
+// Optionally register Service Worker for enhanced privacy
+SDK.serviceWorker.register().then((registration) => {
+  if (registration)
+    console.log('🔒 Service Worker registered - external requests will use Tor when available')
+  else
+    console.log('ℹ️ Service Worker not available or Tor not supported')
 }).catch((error) => {
-  console.log('ℹ️ Service Worker not available:', error.message)
+  console.log('ℹ️ Service Worker registration failed:', error.message)
 })
+```
+
+### **Service Worker Management**
+
+The new Service Worker API provides complete control over privacy features:
+
+```typescript
+// Initialize SDK
+const SDK = new BastyonSdk()
+await SDK.init()
+
+// Register Service Worker for enhanced privacy
+await SDK.serviceWorker.register()
+
+// Check Service Worker status
+const status = SDK.serviceWorker.getStatus()
+console.log('Supported:', status.supported)
+console.log('Registered:', status.registered)
+console.log('Active:', status.active)
+
+// Check if Service Worker is currently active
+if (SDK.serviceWorker.isActive())
+  console.log('🔒 Privacy mode active - external requests are being proxied')
+
+// Unregister Service Worker if needed
+await SDK.serviceWorker.unregister()
+
+// Legacy aliases still work for backward compatibility
+await SDK.registerServiceWorker() // Same as serviceWorker.register()
+const isActive = SDK.isServiceWorkerActive() // Same as serviceWorker.isActive()
 ```
 
 ### **Making API Requests**
@@ -143,7 +173,7 @@ initServiceWorker().then(() => {
 Your existing code doesn't need to change - enhanced privacy works automatically:
 
 ```typescript
-// This request will automatically be proxied through Tor if available
+// This request will automatically be proxied through Tor if Service Worker is active
 fetch('https://api.github.com/users/octocat')
   .then(response => response.json())
   .then((data) => {
@@ -165,22 +195,23 @@ After initialization, you can use the following methods to interact with the Bas
 1. **Opening an External Link**:
 
    ```typescript
-   SdkService.openExternalLink('https://example.com')
+   SDK.openExternalLink('https://example.com')
    ```
 
 2. **Fetching Application Information**:
 
    ```typescript
-   SdkService.getAppInfo().then((info) => {
+   SDK.get.appinfo().then((info) => {
      console.log('App Info:', info)
      console.log('Tor Available:', info.alttransport)
+     console.log('Service Worker Support:', info.supportsServiceWorkerProxy)
    })
    ```
 
 3. **Performing an RPC Call**:
 
    ```typescript
-   SdkService.rpc('getnodeinfo').then((info) => {
+   SDK.rpc('getnodeinfo').then((info) => {
      console.log('Node Info:', info)
    }).catch((error) => {
      console.error('RPC Call Failed:', error)
@@ -190,14 +221,14 @@ After initialization, you can use the following methods to interact with the Bas
 4. **Adding Event Listeners**:
 
    ```typescript
-   SdkService.on('balance', (data) => {
+   SDK.on('balance', (data) => {
      console.log('Balance updated:', data)
    })
    ```
 
 5. **Requesting Permissions**:
    ```typescript
-   SdkService.checkAndRequestPermissions(['account', 'payment']).then(() => {
+   SDK.permissions.request(['account', 'payment']).then(() => {
      console.log('Permissions granted')
    }).catch((error) => {
      console.error('Permission request failed:', error)
@@ -210,16 +241,16 @@ After initialization, you can use the following methods to interact with the Bas
 
 ### **Enhanced Privacy Through Tor**
 
-This template automatically routes external API requests through Bastyon's Tor network when available, providing:
+This template can automatically route external API requests through Bastyon's Tor network when available, providing:
 
 - 🔒 **IP Anonymization** - Your real IP is hidden from external services
 - 🌍 **Censorship Resistance** - Access APIs even in restricted networks
-- ⚡ **Zero Configuration** - Works automatically, no setup required
+- ⚡ **Optional Configuration** - Enable privacy features when needed
 - 🔄 **Smart Filtering** - Only external requests are proxied
 
 ### **How It Works**
 
-1. **Automatic Registration**: Service Worker is automatically registered when the app loads
+1. **Optional Registration**: Service Worker is registered when you call `SDK.serviceWorker.register()`
 2. **Request Interception**: All external HTTP/HTTPS requests are intercepted
 3. **Smart Filtering**: Only external API requests are proxied - local and Bastyon requests are passed through normally
 4. **Tor Integration**: Requests are automatically routed through Tor when available in Bastyon
@@ -227,37 +258,43 @@ This template automatically routes external API requests through Bastyon's Tor n
 
 ### **What Gets Proxied**
 
-✅ **Proxied through Tor:**
+✅ **Proxied through Tor (when Service Worker is active):**
 
 - `https://api.github.com/users/octocat`
 - `https://jsonplaceholder.typicode.com/posts`
 - Any external API calls
 
-❌ **Direct requests (not proxied):**
+❌ **Direct requests (never proxied):**
 
 - `https://bastyon.com/js/lib/apps/sdk.js` - Bastyon resources
 - `http://localhost:3000/` - Your application
 - `chrome-extension://...` - Browser extensions
 - `blob:` and `data:` URLs
 
-### **Service Worker Management**
-
-The Service Worker is managed automatically, but you can check its status:
+### **Service Worker Configuration Options**
 
 ```typescript
-import { useServiceWorker } from './composables/serviceWorker'
+// Simple registration
+await SDK.serviceWorker.register()
 
-const { init, isActive, getAppInfo } = useServiceWorker()
+// Check if Tor is available before registering
+const appInfo = await SDK.get.appinfo()
+if (appInfo.alttransport && appInfo.supportsServiceWorkerProxy) {
+  await SDK.serviceWorker.register()
+  console.log('🔒 Privacy mode enabled')
+}
+else {
+  console.log('ℹ️ Tor not available, using direct requests')
+}
 
-// Check if Service Worker is active
-if (isActive())
-  console.log('🔒 Service Worker is active - requests are being proxied')
-
-// Get app information including Tor availability
-getAppInfo().then((info) => {
-  console.log('Tor available:', info.alttransport)
-  console.log('Service Worker support:', info.supportsServiceWorkerProxy)
-})
+// Advanced status monitoring
+const status = SDK.serviceWorker.getStatus()
+console.log(`Service Worker Status:
+  Supported: ${status.supported}
+  Registered: ${status.registered}
+  Active: ${status.active}
+  Scope: ${status.scope}
+`)
 ```
 
 ### **Security Considerations**
@@ -266,6 +303,7 @@ getAppInfo().then((info) => {
 - ✅ Bastyon and local resources use direct connections for performance
 - ✅ Browser extensions and special protocols are never intercepted
 - ✅ Graceful fallback to direct requests when Tor is unavailable
+- ✅ Service Worker can be disabled/unregistered at any time
 
 ---
 
@@ -275,18 +313,18 @@ When publishing your project, ensure that the following files are included in th
 
 1. **[`b_manifest.json`](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#b-manifest-json)** – This file is essential for describing your mini-application and its settings
 2. **[`b_icon.png`](https://docs.bastyon.com/dev/apps/miniapps/get-started.html#b-icon-png)** – This icon will be displayed as the app icon within the platform
-3. **`miniapp-service-worker.js`** – Service Worker file that handles request proxying through Tor
+3. **`miniapp-service-worker.js`** – Service Worker file that handles request proxying through Tor (optional, only needed if using privacy features)
 
 ### **Service Worker Configuration**
 
-The Service Worker is automatically configured to:
+When included, the Service Worker is automatically configured to:
 
 - ✅ Proxy external API requests through Tor
 - ✅ Allow direct access to Bastyon resources
 - ✅ Skip browser extensions and local resources
 - ✅ Provide graceful fallback when Tor is unavailable
 
-No additional configuration is required - it works out of the box!
+The Service Worker is completely optional - your app will work perfectly without it!
 
 ### **HTTPS Requirements**
 
@@ -335,12 +373,12 @@ Bastyon requires all applications, including those tested locally, to run on **H
 ```bash
 project-root/
 ├── public/
-│   ├── b_manifest.json            # Mini-app metadata
-│   ├── b_icon.png                 # Application icon
-│   └── miniapp-service-worker.js  # Service Worker for Tor proxying
+│   ├── b_manifest.json            # Mini-app metadata (required)
+│   ├── b_icon.png                 # Application icon (required)
+│   └── miniapp-service-worker.js  # Service Worker for Tor proxying (optional)
 ├── src/
 │   └── composables/
-│       └── serviceWorker.ts       # Service Worker management
+│       └── serviceWorker.ts       # Service Worker management (if using privacy features)
 ├── dist/                          # Built application
 ├── localhost-key.pem              # Self-signed private key for HTTPS
 ├── localhost.pem                  # Self-signed certificate for HTTPS
@@ -386,7 +424,7 @@ Run the development server:
 pnpm run dev
 ```
 
-Your application will be available at `https://localhost:3000` with Service Worker support for enhanced privacy.
+Your application will be available at `https://localhost:3000` with optional Service Worker support for enhanced privacy.
 
 Build the project for production:
 
@@ -394,7 +432,7 @@ Build the project for production:
 pnpm run build
 ```
 
-The production build will be available in the `dist/` folder, including the Service Worker for Tor integration.
+The production build will be available in the `dist/` folder, including the Service Worker if you choose to use privacy features.
 
 ---
 
