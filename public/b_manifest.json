@@ -1,7 +1,9 @@
 {
-  "id": "demo.app",
-  "name": "Demo",
-  "description": "Demo application",
-  "author": "TQsidN3F7qcctiJ1Y5FgZnTjzQqQCt6ydG",
-  "permissions": []
+  "id": "bshorts2.bastyon.ir",
+  "name": "Bastyon Shorts",
+  "description": "Short video player for Bastyon #bshorts content",
+  "author": "PXN76kJG5sCGTwMpRfXH5oqkDzJQKNsYk4",
+  "start_url": "index.html",
+  "version": "0.0.1",
+  "scope":"apptest.bastyon.ir"
 }

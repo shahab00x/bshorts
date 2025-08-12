@@ -61,12 +61,7 @@ export default defineConfig({
     // see uno.config.ts for config
     UnoCSS(),
   ],
-  server: {
-    https: {
-      key: fs.readFileSync('./localhost-key.pem'),
-      cert: fs.readFileSync('./localhost.pem'),
-    },
-  },
+  server: {},
   // https://github.com/vitest-dev/vitest
   test: {
     environment: 'jsdom',
