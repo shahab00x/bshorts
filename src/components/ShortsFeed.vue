@@ -55,6 +55,107 @@ const showCommentsDrawer = ref(false)
 interface CommentState { items: any[], loading: boolean, error: string | null, fetchedAt: number }
 const commentsByHash = ref<Record<string, CommentState>>({})
 
+// Avatars cache (by address)
+const avatarsByAddress = ref<Record<string, string>>({})
+
+// Helper: resolve author address of a video item
+function getAuthorAddress(it: any): string | null {
+  return (
+    it?.rawPost?.author_address
+    ?? it?.uploaderAddress
+    ?? null
+  )
+}
+
+// Helper: resolve address from a comment object (be tolerant to shapes)
+function resolveCommentAddress(c: any): string | null {
+  if (!c || typeof c !== 'object')
+    return null
+  // common fields observed in Bastyon
+  const direct = c.address || c.a || c.adr || c.addr
+  if (typeof direct === 'string' && direct)
+    return direct
+  if (c.author && typeof c.author === 'object') {
+    const aa = c.author.address || c.author.a || c.author.adr
+    if (typeof aa === 'string' && aa)
+      return aa
+  }
+  if (c.account && typeof c.account === 'object') {
+    const aa = c.account.address || c.account.a || c.account.adr
+    if (typeof aa === 'string' && aa)
+      return aa
+  }
+  // last resort: scan values
+  for (const v of Object.values(c)) {
+    if (v && typeof v === 'object') {
+      const aa = (v as any).address || (v as any).a || (v as any).adr
+      if (typeof aa === 'string' && aa)
+        return aa
+    }
+  }
+  return null
+}
+
+function getAddressAvatar(address?: string | null): string {
+  if (!address)
+    return ''
+  return avatarsByAddress.value[address] || ''
+}
+
+// Helper mappers for template
+function authorAvatarFor(it: any): string {
+  return getAddressAvatar(getAuthorAddress(it))
+}
+function commentAvatarFor(c: any): string {
+  return getAddressAvatar(resolveCommentAddress(c))
+}
+
+// Batch fetch profiles and cache avatar URLs by address
+async function fetchProfiles(addresses: Set<string>) {
+  const todo = Array.from(addresses).filter(a => a && !avatarsByAddress.value[a])
+  if (todo.length === 0)
+    return
+
+  const chunkSize = 70
+  for (let i = 0; i < todo.length; i += chunkSize) {
+    const chunk = todo.slice(i, i + chunkSize)
+    try {
+      const params: any[] = [chunk, '1'] // '1' => light profile
+      const res: unknown = await SdkService.rpc('getuserprofile', params)
+      if (Array.isArray(res)) {
+        for (const p of res) {
+          const addr = p?.address
+          const url = p?.image || p?.i || p?.avatar_url || ''
+          if (addr && url && !avatarsByAddress.value[addr])
+            avatarsByAddress.value[addr] = url
+        }
+      }
+    }
+    catch (e) {
+      // swallow errors per-chunk; avatars are non-critical
+      // console.warn('avatar fetch failed', e)
+    }
+  }
+}
+
+// Collect current author + commenters addresses
+function collectAddressesForCurrent(): Set<string> {
+  const addrs = new Set<string>()
+  const itLocal = items.value[currentIndex.value] as any
+  const h = itLocal?.rawPost?.video_hash ?? null
+  const st = h ? commentsByHash.value[h] : undefined
+  const author = getAuthorAddress(itLocal)
+  if (author)
+    addrs.add(author)
+  const commentItems = st?.items || []
+  for (const c of commentItems) {
+    const a = resolveCommentAddress(c)
+    if (a)
+      addrs.add(a)
+  }
+  return addrs
+}
+
 const currentVideoHash = computed<string | null>(() => {
   const it = items.value[currentIndex.value] as any
   return it?.rawPost?.video_hash ?? null
@@ -239,6 +340,22 @@ watch(currentIndex, () => {
     if (h && !visibleCountByHash.value[h])
       visibleCountByHash.value[h] = 10
   }
+})
+
+// Avatar fetch triggers
+watch(items, (arr) => {
+  if (Array.isArray(arr) && arr.length)
+    void fetchProfiles(collectAddressesForCurrent())
+})
+watch(currentIndex, () => {
+  void fetchProfiles(collectAddressesForCurrent())
+})
+watch(showCommentsDrawer, (open) => {
+  if (open)
+    void fetchProfiles(collectAddressesForCurrent())
+})
+watch(() => currentComments.value?.items, () => {
+  void fetchProfiles(collectAddressesForCurrent())
 })
 
 // Drawer drag-to-close state
@@ -799,8 +916,13 @@ onBeforeUnmount(() => {
         </div>
         <div class="overlay">
           <div class="meta">
-            <div class="uploader">
-              {{ vi.item.uploader || 'Unknown' }}
+            <div class="author-row">
+              <div class="avatar author-avatar" :style="{ backgroundImage: authorAvatarFor(vi.item) ? `url('${authorAvatarFor(vi.item)}')` : '' }">
+                <span v-if="!authorAvatarFor(vi.item)" class="avatar-fallback">👤</span>
+              </div>
+              <div class="uploader">
+                {{ vi.item.uploader || 'Unknown' }}
+              </div>
             </div>
             <div class="desc" title="View description" @click.stop="openDescriptionDrawer">
               {{ vi.item.description }}
@@ -955,7 +1077,12 @@ onBeforeUnmount(() => {
           </div>
           <ul v-else class="comments-list">
             <li v-for="(c, i) in currentVisibleComments" :key="i" class="comment-item">
-              <div class="comment-text" @click="onDescHtmlClick" v-html="linkify(getCommentText(c))" />
+              <div class="comment-row">
+                <div class="avatar comment-avatar" :style="{ backgroundImage: commentAvatarFor(c) ? `url('${commentAvatarFor(c)}')` : '' }">
+                  <span v-if="!commentAvatarFor(c)" class="avatar-fallback">👤</span>
+                </div>
+                <div class="comment-text" @click="onDescHtmlClick" v-html="linkify(getCommentText(c))" />
+              </div>
             </li>
           </ul>
         </div>
@@ -1349,12 +1476,48 @@ onBeforeUnmount(() => {
 .comment-item:last-child {
   border-bottom: none;
 }
+.comment-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+}
 .comment-text {
   line-height: 1.35;
   white-space: pre-wrap; /* preserve newlines */
   overflow-wrap: anywhere; /* break long URLs/strings */
   word-break: break-word;
 }
+.author-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 16px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.author-avatar {
+  width: 32px;
+  height: 32px;
+}
+.avatar-fallback {
+  opacity: 0.85;
+}
+
 .retry-btn {
   padding: 6px 10px;
   border-radius: 6px;
