@@ -65,6 +65,40 @@ const currentComments = computed<CommentState | undefined>(() => {
   return h ? commentsByHash.value[h] : undefined
 })
 
+// Lazy rendering state: visible count per hash
+const visibleCountByHash = ref<Record<string, number>>({})
+
+function getVisibleCount(hash: string): number {
+  if (!visibleCountByHash.value[hash])
+    visibleCountByHash.value[hash] = 10
+  return visibleCountByHash.value[hash]
+}
+
+const currentVisibleComments = computed<any[]>(() => {
+  const h = currentVideoHash.value
+  if (!h)
+    return []
+  const st = commentsByHash.value[h]
+  if (!st?.items)
+    return []
+  return st.items.slice(0, getVisibleCount(h))
+})
+
+function onCommentsScroll(ev: Event) {
+  const el = ev.target as HTMLElement | null
+  if (!el)
+    return
+  const bottomGap = el.scrollHeight - (el.scrollTop + el.clientHeight)
+  if (bottomGap <= 120) {
+    const h = currentVideoHash.value
+    if (h) {
+      const st = commentsByHash.value[h]
+      if (st?.items?.length && getVisibleCount(h) < st.items.length)
+        visibleCountByHash.value[h] = Math.min(st.items.length, getVisibleCount(h) + 10)
+    }
+  }
+}
+
 function ensureCommentState(hash: string): CommentState {
   if (!commentsByHash.value[hash])
     commentsByHash.value[hash] = { items: [], loading: false, error: null, fetchedAt: 0 }
@@ -72,8 +106,37 @@ function ensureCommentState(hash: string): CommentState {
 }
 
 function getCommentText(c: any): string {
-  const t = c?.msg ?? c?.message ?? c?.text ?? c?.body ?? c?.content ?? ''
-  return typeof t === 'string' ? t : String(t ?? '')
+  const candidates = [
+    c?.msg,
+    c?.message,
+    c?.text,
+    c?.body,
+    c?.content,
+    c?.comment?.msg,
+    c?.comment?.message,
+    c?.comment?.text,
+    c?.comment?.body,
+    c?.data?.msg,
+    c?.data?.message,
+    c?.data?.text,
+    c?.data?.body,
+    c?.value,
+    c?.Description,
+    c?.caption,
+  ].filter(v => typeof v === 'string' && v.trim().length > 0) as string[]
+  if (candidates.length)
+    return candidates[0]
+  if (typeof c === 'string') {
+    try {
+      const obj = JSON.parse(c)
+      return getCommentText(obj)
+    }
+    catch {
+      // ignore
+    }
+    return c
+  }
+  return ''
 }
 
 async function fetchCommentsFor(hash: string, { force = false }: { force?: boolean } = {}) {
@@ -97,6 +160,8 @@ async function fetchCommentsFor(hash: string, { force = false }: { force?: boole
       items = res.data
     state.items = items
     state.fetchedAt = Date.now()
+    if (!visibleCountByHash.value[hash])
+      visibleCountByHash.value[hash] = Math.min(10, state.items.length || 10)
   }
   catch (e: any) {
     state.error = e?.message || String(e)
@@ -124,10 +189,20 @@ function refreshComments() {
 watch(showCommentsDrawer, (open) => {
   if (open)
     fetchCommentsForCurrentIfNeeded()
+  if (open) {
+    const h = currentVideoHash.value
+    if (h && !visibleCountByHash.value[h])
+      visibleCountByHash.value[h] = 10
+  }
 })
 watch(currentIndex, () => {
   if (showCommentsDrawer.value)
     fetchCommentsForCurrentIfNeeded()
+  if (showCommentsDrawer.value) {
+    const h = currentVideoHash.value
+    if (h && !visibleCountByHash.value[h])
+      visibleCountByHash.value[h] = 10
+  }
 })
 
 // Drawer drag-to-close state
@@ -819,10 +894,11 @@ onBeforeUnmount(() => {
           <h3>Comments</h3>
         </div>
         <div
-          class="drawer-body"
+          class="drawer-body comments-body"
           @touchstart="onDrawerBodyTouchStart('comments', $event)"
           @touchmove="onDrawerTouchMove($event)"
           @touchend="onDrawerTouchEnd"
+          @scroll="onCommentsScroll"
         >
           <div v-if="!currentVideoHash" class="no-comments">
             No post id
@@ -842,7 +918,7 @@ onBeforeUnmount(() => {
             No comments yet
           </div>
           <ul v-else class="comments-list">
-            <li v-for="(c, i) in currentComments!.items" :key="i" class="comment-item">
+            <li v-for="(c, i) in currentVisibleComments" :key="i" class="comment-item">
               <div class="comment-text" @click="onDescHtmlClick" v-html="linkify(getCommentText(c))" />
             </li>
           </ul>
@@ -1161,6 +1237,27 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+.comments-body {
+  /* Only vertical scrolling; prevent horizontal overflow */
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Dark scrollbar (Firefox) */
+  scrollbar-color: #4a4a4a rgba(0, 0, 0, 0.35);
+  scrollbar-width: thin;
+}
+/* Dark scrollbar (WebKit/Blink) */
+.comments-body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.comments-body::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.35);
+}
+.comments-body::-webkit-scrollbar-thumb {
+  background-color: #4a4a4a;
+  border-radius: 8px;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+}
 .drawer-body a {
   color: #6ec1ff;
   text-decoration: underline;
@@ -1218,6 +1315,9 @@ onBeforeUnmount(() => {
 }
 .comment-text {
   line-height: 1.35;
+  white-space: pre-wrap; /* preserve newlines */
+  overflow-wrap: anywhere; /* break long URLs/strings */
+  word-break: break-word;
 }
 .retry-btn {
   padding: 6px 10px;
