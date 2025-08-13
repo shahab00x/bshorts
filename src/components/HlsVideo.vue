@@ -14,13 +14,58 @@ const props = withDefaults(defineProps<{
   shouldPlay: false,
 })
 
+const emit = defineEmits<{ (e: 'loadingChange', loading: boolean): void }>()
 const videoEl = ref<HTMLVideoElement | null>(null)
 let hls: Hls | null = null
+const isLoading = ref(false)
+
+function setLoading(val: boolean) {
+  if (isLoading.value !== val) {
+    isLoading.value = val
+    emit('loadingChange', val)
+  }
+}
+
+function onWaiting() {
+  setLoading(true)
+}
+function onReady() {
+  setLoading(false)
+}
+
+function attachVideoEvents() {
+  const el = videoEl.value
+  if (!el)
+    return
+  el.addEventListener('loadstart', onWaiting)
+  el.addEventListener('waiting', onWaiting)
+  el.addEventListener('stalled', onWaiting)
+  el.addEventListener('seeking', onWaiting)
+  el.addEventListener('loadeddata', onReady)
+  el.addEventListener('canplay', onReady)
+  el.addEventListener('playing', onReady)
+}
+
+function detachVideoEvents() {
+  const el = videoEl.value
+  if (!el)
+    return
+  el.removeEventListener('loadstart', onWaiting)
+  el.removeEventListener('waiting', onWaiting)
+  el.removeEventListener('stalled', onWaiting)
+  el.removeEventListener('seeking', onWaiting)
+  el.removeEventListener('loadeddata', onReady)
+  el.removeEventListener('canplay', onReady)
+  el.removeEventListener('playing', onReady)
+}
 
 function teardown() {
   const el = videoEl.value
   if (!el)
     return
+
+  // remove listeners
+  detachVideoEvents()
 
   if (hls) {
     hls.destroy()
@@ -28,12 +73,15 @@ function teardown() {
   }
   el.removeAttribute('src')
   el.load()
+  setLoading(false)
 }
 
 function initHls() {
   const el = videoEl.value
   if (!el)
     return
+
+  setLoading(true)
 
   if (Hls.isSupported()) {
     hls = new Hls({
@@ -53,6 +101,8 @@ function initHls() {
     // Native HLS (Safari). Only set src when we intend to load
     el.src = props.src
   }
+
+  attachVideoEvents()
 }
 
 onMounted(async () => {
@@ -62,6 +112,7 @@ onMounted(async () => {
     if (hls)
       hls.startLoad()
     try {
+      setLoading(true)
       await videoEl.value?.play()
     }
     catch (err) {
@@ -86,6 +137,7 @@ watch(() => props.shouldLoad, (load) => {
   if (load) {
     if (!hls && !(videoEl.value?.canPlayType('application/vnd.apple.mpegurl') && videoEl.value?.currentSrc))
       initHls()
+    setLoading(true)
   }
   else {
     // Stop downloads and release element when we no longer need it
@@ -105,6 +157,7 @@ watch(() => props.shouldPlay, async (play) => {
     if (hls)
       hls.startLoad()
     try {
+      setLoading(true)
       await el.play()
     }
     catch (err) {
@@ -148,3 +201,6 @@ defineExpose({ play, pause, mute, unmute, el: videoEl })
     style="width:100%;height:100%;object-fit:cover;background:#000;"
   />
 </template>
+
+<style scoped>
+</style>

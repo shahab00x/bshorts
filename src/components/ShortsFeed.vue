@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import HlsVideo from '~/components/HlsVideo.vue'
 import PerfOverlay from '~/components/PerfOverlay.vue'
+import LoadingSpinner from '~/components/LoadingSpinner.vue'
 import { appConfig } from '~/config'
 
 interface PeertubeInfo { hlsUrl: string }
@@ -24,6 +25,7 @@ const paused = ref(false)
 const soundOn = ref(false)
 const showOverlayIcon = ref(false)
 let overlayHideTimer: number | null = null
+const videoLoading = ref<boolean[]>([])
 
 function setCardRef(el: HTMLElement | null, idx: number) {
   cardRefs.value[idx] = el
@@ -97,6 +99,7 @@ async function loadPlaylist() {
       throw new Error(`Failed to load playlist: ${res.status}`)
     const data = await res.json()
     items.value = (Array.isArray(data) ? data : []).filter((it: VideoItem) => !!getHls(it))
+    videoLoading.value = items.value.map(() => false)
   }
   catch (e: any) {
     error.value = e?.message || String(e)
@@ -106,6 +109,10 @@ async function loadPlaylist() {
     await nextTick()
     setupObserver()
   }
+}
+
+function onVideoLoadingChange(idx: number, isLoading: boolean) {
+  videoLoading.value[idx] = isLoading
 }
 
 let observer: IntersectionObserver | null = null
@@ -185,6 +192,7 @@ onBeforeUnmount(() => {
           :muted="!(soundOn && idx === currentIndex && !paused)"
           :should-load="shouldLoad(idx)"
           :should-play="shouldPlay(idx)"
+          @loading-change="onVideoLoadingChange(idx, $event)"
         />
         <div v-else class="video-placeholder" />
 
@@ -201,6 +209,10 @@ onBeforeUnmount(() => {
             <span v-if="paused">▶</span>
             <span v-else>❚❚</span>
           </div>
+        </div>
+        <!-- Loading spinner while video is loading/buffering -->
+        <div v-if="inWindow(idx) && videoLoading[idx]" class="overlay-loading">
+          <LoadingSpinner :size="72" pad="14%" aria-label="Loading video" />
         </div>
         <!-- Tap for sound prompt (only when sound is off for the current item) -->
         <div v-if="idx === currentIndex && !soundOn" class="overlay-sound">
@@ -282,6 +294,14 @@ onBeforeUnmount(() => {
 }
 .overlay-center.visible {
   opacity: 1;
+}
+.overlay-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* do not block taps */
 }
 .overlay-sound {
   position: absolute;
