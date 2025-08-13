@@ -106,35 +106,71 @@ function ensureCommentState(hash: string): CommentState {
 }
 
 function getCommentText(c: any): string {
-  const candidates = [
-    c?.msg,
-    c?.message,
-    c?.text,
-    c?.body,
-    c?.content,
-    c?.comment?.msg,
-    c?.comment?.message,
-    c?.comment?.text,
-    c?.comment?.body,
-    c?.data?.msg,
-    c?.data?.message,
-    c?.data?.text,
-    c?.data?.body,
-    c?.value,
-    c?.Description,
-    c?.caption,
-  ].filter(v => typeof v === 'string' && v.trim().length > 0) as string[]
-  if (candidates.length)
-    return candidates[0]
+  if (c == null)
+    return ''
+  // String case: if looks like JSON, parse and recurse; otherwise return trimmed
   if (typeof c === 'string') {
+    const s = c.trim()
+    // Always attempt to parse JSON; fall back to raw text if parsing fails
     try {
-      const obj = JSON.parse(c)
-      return getCommentText(obj)
+      const obj = JSON.parse(s)
+      const t = getCommentText(obj)
+      if (t)
+        return t
     }
-    catch {
-      // ignore
+    catch {}
+    // If it looks like a JSON blob but failed to parse, try extracting common fields via regex
+    if (s.startsWith('{') && s.includes('"')) {
+      // Match JSON-like strings and extract common text fields; avoid unnecessary escapes
+      const re = /"(msg|message|text|body|caption|Description)"\s*:\s*"((?:\\.|[^"\\])*)"/i
+      const m = s.match(re)
+      if (m && m[2] != null) {
+        const unescaped = m[2]
+          .replace(/\\n/g, '\n')
+          .replace(/\\r/g, '\r')
+          .replace(/\\t/g, '\t')
+          .replace(/\\"/g, '"')
+        const trimmed = unescaped.trim()
+        if (trimmed)
+          return trimmed
+      }
     }
-    return c
+    return s
+  }
+  // Array case: return first non-empty extracted text
+  if (Array.isArray(c)) {
+    for (const el of c) {
+      const t = getCommentText(el)
+      if (t)
+        return t
+    }
+    return ''
+  }
+  // Object case: check likely fields, then nested containers
+  if (typeof c === 'object') {
+    const fields = ['msg', 'message', 'text', 'body', 'content', 'value', 'Description', 'caption']
+    for (const f of fields) {
+      const v = (c as any)[f]
+      if (v != null) {
+        const t = getCommentText(v)
+        if (t)
+          return t
+      }
+    }
+    for (const nested of ['comment', 'data']) {
+      const v = (c as any)[nested]
+      if (v != null) {
+        const t = getCommentText(v)
+        if (t)
+          return t
+      }
+    }
+    // Fallback: scan all values for the first meaningful string
+    for (const v of Object.values(c)) {
+      const t = getCommentText(v as any)
+      if (t)
+        return t
+    }
   }
   return ''
 }
