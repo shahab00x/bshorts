@@ -7,6 +7,8 @@ export const appConfig = {
   preloadAhead: 1,
   // Show performance overlay (FPS, buffer, stalls) for current video
   debugPerfOverlay: true,
+  // Use TikTok-like pager (one page per view, swipe/wheel to change)
+  pagerMode: true,
 }
 
 export type AppConfig = typeof appConfig

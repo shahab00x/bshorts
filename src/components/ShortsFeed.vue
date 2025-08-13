@@ -38,32 +38,19 @@ const showTooltip = ref(false)
 const tooltipIdx = ref<number | null>(null)
 const tooltipPct = ref(0)
 
-// Scroll container + virtualization state
-const listRef = ref<HTMLElement | null>(null)
-const viewportHeight = ref(0)
-const scrollTop = ref(0)
+// Pager container + navigation state
+const pagerRef = ref<HTMLElement | null>(null)
+const isPaging = ref(false)
+let lastNavAt = 0
+let touchStartY = 0
+let touchStartTime = 0
 
-// IntersectionObserver instance (declared before any usage)
-let observer: IntersectionObserver | null = null
-
-function updateViewportHeight() {
-  viewportHeight.value = window.innerHeight || 0
-}
-function onScroll() {
-  if (listRef.value)
-    scrollTop.value = listRef.value.scrollTop
-}
-
-// Virtualization window derived from scroll position
-const vh = computed(() => Math.max(1, viewportHeight.value || window.innerHeight || 1))
-const firstIndex = computed(() => Math.floor(scrollTop.value / vh.value))
-const visibleStart = computed(() => Math.max(0, firstIndex.value - 1))
-const visibleEnd = computed(() => Math.min(items.value.length - 1, visibleStart.value + appConfig.preloadAhead + 2))
+// Pager-mode window derived from current index
+const visibleStart = computed(() => Math.max(0, currentIndex.value - 1))
+const visibleEnd = computed(() => Math.min(items.value.length - 1, currentIndex.value + appConfig.preloadAhead))
 const visibleIndices = computed(() =>
   Array.from({ length: Math.max(0, visibleEnd.value - visibleStart.value + 1) }, (_, i) => visibleStart.value + i),
 )
-const topPad = computed(() => visibleStart.value * vh.value)
-const bottomPad = computed(() => (items.value.length - 1 - visibleEnd.value) * vh.value)
 const visibleItems = computed(() => visibleIndices.value.map(idx => ({ idx, item: items.value[idx] })))
 
 function clamp01(n: number) {
@@ -81,13 +68,8 @@ function formatTime(sec: number) {
 }
 
 function setCardRef(el: HTMLElement | null, idx: number) {
-  const prev = cardRefs.value[idx]
-  if (prev && observer)
-    observer.unobserve(prev)
-
+  // Keep refs for potential future use (e.g., focus management)
   cardRefs.value[idx] = el
-  if (el && observer)
-    observer.observe(el)
 }
 
 function setVideoRef(el: any, idx: number) {
@@ -168,7 +150,8 @@ async function loadPlaylist() {
   finally {
     loading.value = false
     await nextTick()
-    setupObserver()
+    // Focus pager for keyboard navigation once content is ready
+    pagerRef.value?.focus()
   }
 }
 
@@ -256,58 +239,82 @@ function onWindowPointerUp() {
   // keep tooltip if hovering; otherwise it will be hidden by mouseleave
 }
 
-function setupObserver() {
-  if (observer) {
-    observer.disconnect()
-    observer = null
+// Pager navigation helpers
+function resetOnPageChange() {
+  // reset paused when switching items to auto-play the new one
+  paused.value = false
+  if (overlayHideTimer)
+    window.clearTimeout(overlayHideTimer)
+  overlayHideTimer = null
+  showOverlayIcon.value = false
+}
+function goToIndex(next: number) {
+  if (next < 0 || next >= items.value.length || next === currentIndex.value)
+    return
+  currentIndex.value = next
+  resetOnPageChange()
+}
+function nextPage() {
+  goToIndex(currentIndex.value + 1)
+}
+function prevPage() {
+  goToIndex(currentIndex.value - 1)
+}
+function onWheel(ev: WheelEvent) {
+  // Prevent underlying scroll (host app)
+  ev.preventDefault()
+  if (isPaging.value)
+    return
+  const now = performance.now()
+  if (now - lastNavAt < 300)
+    return
+  if (ev.deltaY > 20)
+    nextPage()
+  else if (ev.deltaY < -20)
+    prevPage()
+  lastNavAt = now
+  isPaging.value = true
+  window.setTimeout(() => {
+    isPaging.value = false
+  }, 220)
+}
+function onTouchStart(ev: TouchEvent) {
+  if (ev.touches.length > 0) {
+    touchStartY = ev.touches[0].clientY
+    touchStartTime = performance.now()
   }
-
-  observer = new IntersectionObserver((entries) => {
-    // Determine the most visible item from provided entries
-    let bestIdx = -1
-    let bestRatio = 0
-    for (const entry of entries) {
-      const idxAttr = entry.target.getAttribute('data-idx')
-      const idx = idxAttr ? Number(idxAttr) : -1
-      if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
-        bestRatio = entry.intersectionRatio
-        bestIdx = idx
-      }
-    }
-
-    if (bestIdx >= 0) {
-      if (bestIdx !== currentIndex.value) {
-        currentIndex.value = bestIdx
-        // reset paused when switching items to auto-play the new one
-        paused.value = false
-        // hide overlay icon and clear timer on item change
-        if (overlayHideTimer)
-          window.clearTimeout(overlayHideTimer)
-        overlayHideTimer = null
-        showOverlayIcon.value = false
-      }
-    }
-  }, { threshold: [0, 0.25, 0.5, 0.6, 0.75, 1], rootMargin: '200px 0px', root: listRef.value || null })
-
-  for (let i = 0; i < cardRefs.value.length; i++) {
-    const el = cardRefs.value[i]
-    if (el)
-      observer.observe(el)
+}
+function onTouchEnd(ev: TouchEvent) {
+  const touch = ev.changedTouches[0]
+  if (!touch)
+    return
+  const dy = touch.clientY - touchStartY
+  const dt = performance.now() - touchStartTime
+  if (Math.abs(dy) > 50 && dt < 800) {
+    if (dy < 0)
+      nextPage()
+    else
+      prevPage()
+  }
+}
+function onKeyDown(ev: KeyboardEvent) {
+  if (ev.key === 'ArrowDown' || ev.key === 'PageDown') {
+    ev.preventDefault()
+    nextPage()
+  }
+  else if (ev.key === 'ArrowUp' || ev.key === 'PageUp') {
+    ev.preventDefault()
+    prevPage()
   }
 }
 
 onMounted(() => {
-  updateViewportHeight()
-  window.addEventListener('resize', updateViewportHeight)
   void loadPlaylist()
 })
 
 onBeforeUnmount(() => {
-  if (observer)
-    observer.disconnect()
   // Safety: remove pointer listeners if scrubbing during unmount
   window.removeEventListener('pointermove', onWindowPointerMove)
-  window.removeEventListener('resize', updateViewportHeight)
 })
 </script>
 
@@ -320,14 +327,22 @@ onBeforeUnmount(() => {
       {{ error }}
     </div>
 
-    <div v-else ref="listRef" class="shorts-list" @scroll="onScroll">
-      <div class="spacer" :style="{ height: `${topPad}px` }" aria-hidden="true" />
-
+    <div
+      v-else
+      ref="pagerRef"
+      class="pager-root"
+      tabindex="0"
+      @wheel="onWheel"
+      @touchstart.passive="onTouchStart"
+      @touchend.passive="onTouchEnd"
+      @keydown="onKeyDown"
+    >
       <section
         v-for="vi in visibleItems"
         :key="vi.idx"
         :ref="(el) => setCardRef(el as HTMLElement | null, vi.idx)"
-        class="shorts-item"
+        class="pager-item"
+        :class="{ 'is-current': vi.idx === currentIndex, 'is-prev': vi.idx < currentIndex, 'is-next': vi.idx > currentIndex }"
         :data-idx="vi.idx"
         @click="onSectionClick(vi.idx)"
       >
@@ -429,8 +444,6 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </section>
-
-      <div class="spacer" :style="{ height: `${bottomPad}px` }" aria-hidden="true" />
     </div>
   </div>
 </template>
@@ -451,40 +464,30 @@ onBeforeUnmount(() => {
 .text-red {
   color: #e57373;
 }
-.shorts-list {
+.pager-root {
   height: 100vh;
-  overflow-y: auto;
-  scroll-snap-type: y mandatory;
-  overscroll-behavior-y: contain;
+  overflow: hidden;
+  touch-action: pan-x; /* allow vertical swipes to be handled */
 }
-.shorts-list {
-  /* hide scrollbar UI */
-  -ms-overflow-style: none; /* IE/Edge legacy */
-  scrollbar-width: none; /* Firefox */
-}
-.shorts-list::-webkit-scrollbar {
-  /* Chrome/Safari */
-  width: 0;
-  height: 0;
-}
-/* Ensure hiding works even with scoped styles by adding global selectors */
-:global(.shorts-list) {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-:global(.shorts-list::-webkit-scrollbar) {
-  width: 0;
-  height: 0;
-}
-.shorts-item {
-  position: relative;
+.pager-item {
+  position: absolute;
+  inset: 0;
   height: 100vh;
-  scroll-snap-align: start;
-  /* Promote to its own layer for smoother scrolling */
+  /* Promote to its own layer for smoother animations */
   will-change: transform;
   transform: translateZ(0);
   contain: content;
   backface-visibility: hidden;
+  transition: transform 220ms ease;
+}
+.pager-item.is-current {
+  transform: translateY(0%);
+}
+.pager-item.is-prev {
+  transform: translateY(-100%);
+}
+.pager-item.is-next {
+  transform: translateY(100%);
 }
 .overlay {
   position: absolute;
@@ -644,17 +647,5 @@ onBeforeUnmount(() => {
 }
 .spacer {
   width: 100%;
-}
-</style>
-
-<style>
-/* Global (non-scoped) fallback to guarantee scrollbar is hidden */
-.shorts-list {
-  -ms-overflow-style: none; /* IE/Edge legacy */
-  scrollbar-width: none; /* Firefox */
-}
-.shorts-list::-webkit-scrollbar {
-  width: 0;
-  height: 0;
 }
 </style>
