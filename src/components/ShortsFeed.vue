@@ -19,6 +19,7 @@ const error = ref<string | null>(null)
 const cardRefs = ref<(HTMLElement | null)[]>([])
 const currentIndex = ref(0)
 const paused = ref(false)
+const soundOn = ref(false)
 const showOverlayIcon = ref(false)
 let overlayHideTimer: number | null = null
 
@@ -55,6 +56,8 @@ function togglePlay() {
   showOverlayIcon.value = true
   // Manage fade-out when unpausing
   if (!paused.value) {
+    // user resumed playback -> enable sound globally
+    soundOn.value = true
     if (overlayHideTimer)
       window.clearTimeout(overlayHideTimer)
     overlayHideTimer = window.setTimeout(() => {
@@ -74,6 +77,10 @@ function togglePlay() {
 function onSectionClick(idx: number) {
   if (idx === currentIndex.value)
     togglePlay()
+}
+
+function enableSound() {
+  soundOn.value = true
 }
 
 async function loadPlaylist() {
@@ -167,7 +174,7 @@ onBeforeUnmount(() => {
         <HlsVideo
           v-if="inWindow(idx)"
           :src="getHls(it)!"
-          :muted="true"
+          :muted="!(soundOn && idx === currentIndex && !paused)"
           :loop="true"
           :should-load="shouldLoad(idx)"
           :should-play="shouldPlay(idx)"
@@ -180,6 +187,12 @@ onBeforeUnmount(() => {
             <span v-if="paused">▶</span>
             <span v-else>❚❚</span>
           </div>
+        </div>
+        <!-- Tap for sound prompt (only when sound is off for the current item) -->
+        <div v-if="idx === currentIndex && !soundOn" class="overlay-sound">
+          <button class="sound-btn" aria-label="Tap for sound" @click.stop="enableSound">
+            Tap for sound
+          </button>
         </div>
         <div class="overlay">
           <div class="meta">
@@ -250,6 +263,24 @@ onBeforeUnmount(() => {
 }
 .overlay-center.visible {
   opacity: 1;
+}
+.overlay-sound {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none; /* allow taps to pass through except the button */
+}
+.sound-btn {
+  pointer-events: auto;
+  margin-bottom: 18vh;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-weight: 600;
 }
 .play-icon {
   width: 80px;
