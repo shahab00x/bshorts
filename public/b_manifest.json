@@ -1,5 +1,5 @@
 {
-  "id": "bshorts2.bastyon.ir",
+  "id": "bshorts3.bastyon.ir",
   "name": "Bastyon Shorts",
   "description": "Short video player for Bastyon #bshorts content",
   "author": "PXN76kJG5sCGTwMpRfXH5oqkDzJQKNsYk4",
@@ -10,6 +10,7 @@
     "externallink ",
     "payment ",
     "sign",
-    "account"
+    "account",
+    "authFetch"
   ]
 }
