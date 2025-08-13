@@ -8,6 +8,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     HlsVideo: typeof import('./src/components/HlsVideo.vue')['default']
+    LoadingSpinner: typeof import('./src/components/LoadingSpinner.vue')['default']
     PerfOverlay: typeof import('./src/components/PerfOverlay.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
