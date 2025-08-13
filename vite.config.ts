@@ -1,7 +1,6 @@
 /// <reference types="vitest" />
 
 import path from 'node:path'
-import fs from 'node:fs'
 import { defineConfig } from 'vite'
 import Vue from '@vitejs/plugin-vue'
 import Components from 'unplugin-vue-components/vite'
