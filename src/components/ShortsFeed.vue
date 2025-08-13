@@ -456,6 +456,7 @@ onBeforeUnmount(() => {
 }
 .center-msg {
   height: 100vh;
+  height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -466,6 +467,7 @@ onBeforeUnmount(() => {
 }
 .pager-root {
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   touch-action: pan-x; /* allow vertical swipes to be handled */
 }
@@ -473,6 +475,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   height: 100vh;
+  height: 100dvh;
   /* Promote to its own layer for smoother animations */
   will-change: transform;
   transform: translateZ(0);
@@ -536,6 +539,7 @@ onBeforeUnmount(() => {
 .sound-btn {
   pointer-events: auto;
   margin-bottom: 18vh;
+  margin-bottom: 18dvh;
   padding: 10px 16px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.6);

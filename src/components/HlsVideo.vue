@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Hls from 'hls.js'
+import { appConfig } from '~/config'
 
 const props = withDefaults(defineProps<{
   src: string
@@ -23,6 +24,13 @@ const emit = defineEmits<{
 const videoEl = ref<HTMLVideoElement | null>(null)
 let hls: Hls | null = null
 const isLoading = ref(false)
+// Track container and intrinsic video sizes to compute visible fraction
+const containerW = ref(0)
+const containerH = ref(0)
+const intrinsicW = ref(0)
+const intrinsicH = ref(0)
+let ro: ResizeObserver | null = null
+let winResizeHandler: (() => void) | null = null
 
 function setLoading(val: boolean) {
   if (isLoading.value !== val) {
@@ -79,6 +87,8 @@ function attachVideoEvents() {
   const el = videoEl.value
   if (!el)
     return
+  // Intrinsic size available after metadata
+  el.addEventListener('loadedmetadata', onLoadedMetadata)
   el.addEventListener('loadstart', onWaiting)
   el.addEventListener('waiting', onWaiting)
   el.addEventListener('stalled', onWaiting)
@@ -101,6 +111,7 @@ function detachVideoEvents() {
   const el = videoEl.value
   if (!el)
     return
+  el.removeEventListener('loadedmetadata', onLoadedMetadata)
   el.removeEventListener('loadstart', onWaiting)
   el.removeEventListener('waiting', onWaiting)
   el.removeEventListener('stalled', onWaiting)
@@ -168,6 +179,29 @@ function initHls() {
 }
 
 onMounted(async () => {
+  // Observe container size changes
+  const el = videoEl.value
+  if (el && 'ResizeObserver' in window) {
+    ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect
+      if (cr) {
+        containerW.value = Math.max(1, Math.floor(cr.width))
+        containerH.value = Math.max(1, Math.floor(cr.height))
+      }
+    })
+    ro.observe(el)
+  }
+  else if (el) {
+    // Fallback: use window resize
+    const updateSize = () => {
+      containerW.value = Math.max(1, el.clientWidth || 0)
+      containerH.value = Math.max(1, el.clientHeight || 0)
+    }
+    winResizeHandler = updateSize
+    window.addEventListener('resize', winResizeHandler)
+    updateSize()
+  }
+
   if (props.shouldLoad && !hls)
     initHls()
   if (props.shouldPlay) {
@@ -184,6 +218,14 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   teardown()
+  if (ro) {
+    ro.disconnect()
+    ro = null
+  }
+  if (winResizeHandler) {
+    window.removeEventListener('resize', winResizeHandler)
+    winResizeHandler = null
+  }
 })
 
 watch(() => props.src, () => {
@@ -260,6 +302,28 @@ function seekTo(seconds: number) {
 
 // Expose controls to parent
 defineExpose({ play, pause, mute, unmute, seekTo, el: videoEl })
+
+// ----- Visible fraction and object-fit selection -----
+function onLoadedMetadata() {
+  const el = videoEl.value
+  if (!el)
+    return
+  intrinsicW.value = Math.max(1, el.videoWidth || 0)
+  intrinsicH.value = Math.max(1, el.videoHeight || 0)
+}
+
+const containerAR = computed(() => containerW.value / Math.max(1, containerH.value))
+const videoAR = computed(() => intrinsicW.value / Math.max(1, intrinsicH.value))
+// Under object-fit: cover, the visible area fraction equals min(containerAR/videoAR, videoAR/containerAR)
+const coverVisibleFraction = computed(() => {
+  const car = containerAR.value
+  const varr = videoAR.value
+  if (!Number.isFinite(car) || !Number.isFinite(varr) || car <= 0 || varr <= 0)
+    return 1
+  const r = car / varr
+  return Math.min(r, 1 / r)
+})
+const objectFitMode = computed(() => coverVisibleFraction.value < appConfig.minVisibleFraction ? 'contain' : 'cover')
 </script>
 
 <template>
@@ -269,7 +333,7 @@ defineExpose({ play, pause, mute, unmute, seekTo, el: videoEl })
     :loop="loop"
     playsinline
     preload="none"
-    style="width:100%;height:100%;object-fit:cover;background:#000;"
+    :style="{ width: '100%', height: '100%', objectFit: objectFitMode, background: '#000' }"
   />
 </template>
 
