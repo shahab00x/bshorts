@@ -27,10 +27,23 @@ function setLoading(val: boolean) {
 }
 
 function onWaiting() {
-  setLoading(true)
+  const el = videoEl.value
+  if (!el)
+    return
+  // Only show spinner if we truly don't have enough data to play
+  if (el.readyState < 2)
+    setLoading(true)
 }
 function onReady() {
   setLoading(false)
+}
+function onTimeUpdate() {
+  const el = videoEl.value
+  if (!el)
+    return
+  // When frames are advancing and we're not actively seeking/paused, consider it ready
+  if (!el.seeking && !el.paused && el.readyState >= 2)
+    setLoading(false)
 }
 
 function attachVideoEvents() {
@@ -41,9 +54,15 @@ function attachVideoEvents() {
   el.addEventListener('waiting', onWaiting)
   el.addEventListener('stalled', onWaiting)
   el.addEventListener('seeking', onWaiting)
+  el.addEventListener('seeked', onReady)
   el.addEventListener('loadeddata', onReady)
   el.addEventListener('canplay', onReady)
   el.addEventListener('playing', onReady)
+  el.addEventListener('play', onReady)
+  el.addEventListener('progress', onReady)
+  el.addEventListener('ended', onReady)
+  el.addEventListener('durationchange', onReady)
+  el.addEventListener('timeupdate', onTimeUpdate)
 }
 
 function detachVideoEvents() {
@@ -54,9 +73,15 @@ function detachVideoEvents() {
   el.removeEventListener('waiting', onWaiting)
   el.removeEventListener('stalled', onWaiting)
   el.removeEventListener('seeking', onWaiting)
+  el.removeEventListener('seeked', onReady)
   el.removeEventListener('loadeddata', onReady)
   el.removeEventListener('canplay', onReady)
   el.removeEventListener('playing', onReady)
+  el.removeEventListener('play', onReady)
+  el.removeEventListener('progress', onReady)
+  el.removeEventListener('ended', onReady)
+  el.removeEventListener('durationchange', onReady)
+  el.removeEventListener('timeupdate', onTimeUpdate)
 }
 
 function teardown() {
