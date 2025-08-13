@@ -11,6 +11,6 @@
     "payment ",
     "sign",
     "account",
-    "authfetch"
+    "authFetch"
   ]
 }
