@@ -7,8 +7,8 @@
   "version": "0.0.1",
   "scope": "apptest.bastyon.ir",
   "permissions": [
-    "externallink ",
-    "payment ",
+    "externallink",
+    "payment",
     "sign",
     "account",
     "authFetch"

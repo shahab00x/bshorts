@@ -4,6 +4,7 @@ import HlsVideo from '~/components/HlsVideo.vue'
 import PerfOverlay from '~/components/PerfOverlay.vue'
 import LoadingSpinner from '~/components/LoadingSpinner.vue'
 import { appConfig } from '~/config'
+import { SdkService } from '~/composables'
 
 interface PeertubeInfo { hlsUrl: string }
 
@@ -12,7 +13,14 @@ interface VideoItem {
   uploader?: string
   duration?: number
   videoInfo?: { peertube?: PeertubeInfo }
-  rawPost?: { peertube?: PeertubeInfo }
+  rawPost?: {
+    peertube?: PeertubeInfo
+    hashtags?: string[] | string
+    description?: string
+    title?: string
+    caption?: string
+    comments?: number
+  }
 }
 
 const items = ref<VideoItem[]>([])
@@ -108,7 +116,7 @@ function linkify(s: string): string {
   const withBreaks = escaped.replace(/\n/g, '<br/>')
   // URL regex (simple)
   const urlRe = /(https?:\/\/[^\s<]+)/gi
-  return withBreaks.replace(urlRe, m => `<a href="${m}" target="_blank" rel="noopener nofollow">${m}</a>`)
+  return withBreaks.replace(urlRe, m => `<a href="${m}" rel="noopener nofollow">${m}</a>`)
 }
 
 const descCaption = computed(() => getCaption(currentItem.value))
@@ -496,6 +504,32 @@ function onKeyDown(ev: KeyboardEvent) {
   }
 }
 
+async function handleExternalLink(url: string, ev?: Event) {
+  try {
+    ev?.preventDefault?.()
+    ev?.stopPropagation?.()
+    await SdkService.checkAndRequestPermissions(['externallink'])
+    SdkService.openExternalLink(url)
+  }
+  catch (e) {
+    console.error('Failed to open external link via SDK:', e)
+  }
+}
+
+function onDescHtmlClick(ev: MouseEvent) {
+  const target = ev.target as HTMLElement | null
+  if (!target)
+    return
+  const a = target.closest('a') as HTMLAnchorElement | null
+  if (a && a.href)
+    void handleExternalLink(a.href, ev)
+}
+
+function onHashtagClick(tag: string, ev?: Event) {
+  const url = `https://bastyon.com/index?sst=${encodeURIComponent(tag)}`
+  void handleExternalLink(url, ev)
+}
+
 onMounted(() => {
   void loadPlaylist()
 })
@@ -670,15 +704,15 @@ onBeforeUnmount(() => {
               {{ descCaption }}
             </h4>
           </template>
-          <div class="desc-text" v-html="descHtml" />
+          <div class="desc-text" @click="onDescHtmlClick" v-html="descHtml" />
           <div v-if="descTags.length" class="hashtags-row">
             <a
               v-for="(tag, i) in descTags"
               :key="i"
               class="hashtag"
               :href="`https://bastyon.com/index?sst=${encodeURIComponent(tag)}`"
-              target="_blank"
               rel="noopener"
+              @click.prevent="onHashtagClick(tag, $event)"
             >#{{ tag }}</a>
           </div>
         </div>
