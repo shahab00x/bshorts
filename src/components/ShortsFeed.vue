@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import HlsVideo from '~/components/HlsVideo.vue'
 import PerfOverlay from '~/components/PerfOverlay.vue'
 import LoadingSpinner from '~/components/LoadingSpinner.vue'
@@ -38,6 +38,34 @@ const showTooltip = ref(false)
 const tooltipIdx = ref<number | null>(null)
 const tooltipPct = ref(0)
 
+// Scroll container + virtualization state
+const listRef = ref<HTMLElement | null>(null)
+const viewportHeight = ref(0)
+const scrollTop = ref(0)
+
+// IntersectionObserver instance (declared before any usage)
+let observer: IntersectionObserver | null = null
+
+function updateViewportHeight() {
+  viewportHeight.value = window.innerHeight || 0
+}
+function onScroll() {
+  if (listRef.value)
+    scrollTop.value = listRef.value.scrollTop
+}
+
+// Virtualization window derived from scroll position
+const vh = computed(() => Math.max(1, viewportHeight.value || window.innerHeight || 1))
+const firstIndex = computed(() => Math.floor(scrollTop.value / vh.value))
+const visibleStart = computed(() => Math.max(0, firstIndex.value - 1))
+const visibleEnd = computed(() => Math.min(items.value.length - 1, visibleStart.value + appConfig.preloadAhead + 2))
+const visibleIndices = computed(() =>
+  Array.from({ length: Math.max(0, visibleEnd.value - visibleStart.value + 1) }, (_, i) => visibleStart.value + i),
+)
+const topPad = computed(() => visibleStart.value * vh.value)
+const bottomPad = computed(() => (items.value.length - 1 - visibleEnd.value) * vh.value)
+const visibleItems = computed(() => visibleIndices.value.map(idx => ({ idx, item: items.value[idx] })))
+
 function clamp01(n: number) {
   return Math.max(0, Math.min(1, n))
 }
@@ -53,7 +81,13 @@ function formatTime(sec: number) {
 }
 
 function setCardRef(el: HTMLElement | null, idx: number) {
+  const prev = cardRefs.value[idx]
+  if (prev && observer)
+    observer.unobserve(prev)
+
   cardRefs.value[idx] = el
+  if (el && observer)
+    observer.observe(el)
 }
 
 function setVideoRef(el: any, idx: number) {
@@ -222,13 +256,12 @@ function onWindowPointerUp() {
   // keep tooltip if hovering; otherwise it will be hidden by mouseleave
 }
 
-let observer: IntersectionObserver | null = null
-
 function setupObserver() {
   if (observer) {
     observer.disconnect()
     observer = null
   }
+
   observer = new IntersectionObserver((entries) => {
     // Determine the most visible item from provided entries
     let bestIdx = -1
@@ -254,7 +287,7 @@ function setupObserver() {
         showOverlayIcon.value = false
       }
     }
-  }, { threshold: [0, 0.25, 0.5, 0.6, 0.75, 1], rootMargin: '200px 0px' })
+  }, { threshold: [0, 0.25, 0.5, 0.6, 0.75, 1], rootMargin: '200px 0px', root: listRef.value || null })
 
   for (let i = 0; i < cardRefs.value.length; i++) {
     const el = cardRefs.value[i]
@@ -264,6 +297,8 @@ function setupObserver() {
 }
 
 onMounted(() => {
+  updateViewportHeight()
+  window.addEventListener('resize', updateViewportHeight)
   void loadPlaylist()
 })
 
@@ -272,6 +307,7 @@ onBeforeUnmount(() => {
     observer.disconnect()
   // Safety: remove pointer listeners if scrubbing during unmount
   window.removeEventListener('pointermove', onWindowPointerMove)
+  window.removeEventListener('resize', updateViewportHeight)
 })
 </script>
 
@@ -284,34 +320,36 @@ onBeforeUnmount(() => {
       {{ error }}
     </div>
 
-    <div v-else class="shorts-list">
+    <div v-else ref="listRef" class="shorts-list" @scroll="onScroll">
+      <div class="spacer" :style="{ height: `${topPad}px` }" aria-hidden="true" />
+
       <section
-        v-for="(it, idx) in items"
-        :key="idx"
-        :ref="(el) => setCardRef(el as HTMLElement | null, idx)"
+        v-for="vi in visibleItems"
+        :key="vi.idx"
+        :ref="(el) => setCardRef(el as HTMLElement | null, vi.idx)"
         class="shorts-item"
-        :data-idx="idx"
-        @click="onSectionClick(idx)"
+        :data-idx="vi.idx"
+        @click="onSectionClick(vi.idx)"
       >
         <HlsVideo
-          v-if="inWindow(idx)"
-          :ref="(el) => setVideoRef(el, idx)"
-          :src="getHls(it)!"
+          v-if="inWindow(vi.idx)"
+          :ref="(el) => setVideoRef(el, vi.idx)"
+          :src="getHls(vi.item)!"
           :loop="true"
-          :muted="!(soundOn && idx === currentIndex && !paused)"
-          :should-load="shouldLoad(idx)"
-          :should-play="shouldPlay(idx)"
-          @loading-change="onVideoLoadingChange(idx, $event)"
-          @progress="onVideoProgress(idx, $event)"
-          @buffered="onVideoBuffered(idx, $event)"
+          :muted="!(soundOn && vi.idx === currentIndex && !paused)"
+          :should-load="shouldLoad(vi.idx)"
+          :should-play="shouldPlay(vi.idx)"
+          @loading-change="onVideoLoadingChange(vi.idx, $event)"
+          @progress="onVideoProgress(vi.idx, $event)"
+          @buffered="onVideoBuffered(vi.idx, $event)"
         />
         <div v-else class="video-placeholder" />
 
         <!-- Debug performance overlay -->
         <PerfOverlay
-          v-if="appConfig.debugPerfOverlay && idx === currentIndex"
-          :video-el="videoRefs[idx]?.el ?? null"
-          :is-current="idx === currentIndex"
+          v-if="appConfig.debugPerfOverlay && vi.idx === currentIndex"
+          :video-el="videoRefs[vi.idx]?.el ?? null"
+          :is-current="vi.idx === currentIndex"
         />
 
         <!-- Centered play/pause icon shown on user toggle -->
@@ -322,11 +360,11 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <!-- Loading spinner while video is loading/buffering -->
-        <div v-if="inWindow(idx) && videoLoading[idx]" class="overlay-loading">
+        <div v-if="inWindow(vi.idx) && videoLoading[vi.idx]" class="overlay-loading">
           <LoadingSpinner :size="72" pad="14%" aria-label="Loading video" />
         </div>
         <!-- Tap for sound prompt (only when sound is off for the current item) -->
-        <div v-if="idx === currentIndex && !soundOn" class="overlay-sound">
+        <div v-if="vi.idx === currentIndex && !soundOn" class="overlay-sound">
           <button class="sound-btn" aria-label="Tap for sound" @click.stop="enableSound">
             Tap for sound
           </button>
@@ -334,30 +372,30 @@ onBeforeUnmount(() => {
         <div class="overlay">
           <div class="meta">
             <div class="uploader">
-              {{ it.uploader || 'Unknown' }}
+              {{ vi.item.uploader || 'Unknown' }}
             </div>
             <div class="desc">
-              {{ it.description }}
+              {{ vi.item.description }}
             </div>
           </div>
           <div class="seekbar">
             <div
               class="seekbar-track"
-              @click.stop.prevent="onSeekClick(idx, $event)"
-              @pointerdown="onSeekPointerDown(idx, $event)"
-              @mousemove="onTrackHoverMove(idx, $event)"
+              @click.stop.prevent="onSeekClick(vi.idx, $event)"
+              @pointerdown="onSeekPointerDown(vi.idx, $event)"
+              @mousemove="onTrackHoverMove(vi.idx, $event)"
               @mouseleave="onTrackHoverLeave"
             >
               <div
-                v-for="(r, rIdx) in (buffered[idx]?.ranges || [])"
+                v-for="(r, rIdx) in (buffered[vi.idx]?.ranges || [])"
                 :key="rIdx"
                 class="buffer-segment"
                 :style="{
-                  left: buffered[idx]?.duration
-                    ? `${((r.start / buffered[idx].duration) * 100).toFixed(2)}%`
+                  left: buffered[vi.idx]?.duration
+                    ? `${((r.start / buffered[vi.idx].duration) * 100).toFixed(2)}%`
                     : '0%',
-                  width: buffered[idx]?.duration
-                    ? `${(((r.end - r.start) / buffered[idx].duration) * 100).toFixed(2)}%`
+                  width: buffered[vi.idx]?.duration
+                    ? `${(((r.end - r.start) / buffered[vi.idx].duration) * 100).toFixed(2)}%`
                     : '0%',
                 }"
               />
@@ -365,32 +403,34 @@ onBeforeUnmount(() => {
                 class="seekbar-fill"
                 :style="{
                   width: `${(
-                    progress[idx]?.duration
-                      ? ((isScrubbing && scrubIdx === idx)
+                    progress[vi.idx]?.duration
+                      ? ((isScrubbing && scrubIdx === vi.idx)
                         ? (scrubPct * 100)
-                        : Math.min(100, Math.max(0, (progress[idx].currentTime / progress[idx].duration) * 100)))
+                        : Math.min(100, Math.max(0, (progress[vi.idx].currentTime / progress[vi.idx].duration) * 100)))
                       : 0
                   ).toFixed(2)}%`,
                 }"
               />
               <div
-                v-if="isScrubbing && scrubIdx === idx"
+                v-if="isScrubbing && scrubIdx === vi.idx"
                 class="seekbar-thumb"
                 :style="{
                   left: `${(scrubPct * 100).toFixed(2)}%`,
                 }"
               />
               <div
-                v-if="showTooltip && tooltipIdx === idx"
+                v-if="showTooltip && tooltipIdx === vi.idx"
                 class="seekbar-tooltip"
                 :style="{ left: `${(tooltipPct * 100).toFixed(2)}%` }"
               >
-                {{ formatTime((progress[idx]?.duration || buffered[idx]?.duration || 0) * tooltipPct) }}
+                {{ formatTime((progress[vi.idx]?.duration || buffered[vi.idx]?.duration || 0) * tooltipPct) }}
               </div>
             </div>
           </div>
         </div>
       </section>
+
+      <div class="spacer" :style="{ height: `${bottomPad}px` }" aria-hidden="true" />
     </div>
   </div>
 </template>
@@ -416,6 +456,25 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   scroll-snap-type: y mandatory;
   overscroll-behavior-y: contain;
+}
+.shorts-list {
+  /* hide scrollbar UI */
+  -ms-overflow-style: none; /* IE/Edge legacy */
+  scrollbar-width: none; /* Firefox */
+}
+.shorts-list::-webkit-scrollbar {
+  /* Chrome/Safari */
+  width: 0;
+  height: 0;
+}
+/* Ensure hiding works even with scoped styles by adding global selectors */
+:global(.shorts-list) {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+:global(.shorts-list::-webkit-scrollbar) {
+  width: 0;
+  height: 0;
 }
 .shorts-item {
   position: relative;
@@ -582,5 +641,20 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   background: #000;
+}
+.spacer {
+  width: 100%;
+}
+</style>
+
+<style>
+/* Global (non-scoped) fallback to guarantee scrollbar is hidden */
+.shorts-list {
+  -ms-overflow-style: none; /* IE/Edge legacy */
+  scrollbar-width: none; /* Firefox */
+}
+.shorts-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 </style>
