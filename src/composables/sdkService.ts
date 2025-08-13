@@ -25,10 +25,29 @@ export class SdkService {
 
     try {
       this.sdk = new window.BastyonSdk()
-      await this.sdk.init()
-      this.sdk.emit('loaded') // Notify the platform that the app is ready
-      await this.sdk.serviceWorker.register()
-      console.log('Bastyon SDK successfully initialized.')
+      // The host BastyonSdk (pocketnet.gui/js/lib/apps/sdk.js) does not expose an init() method.
+      // Guard in case a future/alternate host provides it.
+      const sdkUnknown: unknown = this.sdk
+      const hasInit = (o: unknown): o is { init: () => Promise<void> | void } => {
+        return typeof (o as { init?: unknown }).init === 'function'
+      }
+      const hasSWRegister = (o: unknown): o is { serviceWorker: { register: () => Promise<void> | void } } => {
+        const sw = (o as { serviceWorker?: { register?: unknown } }).serviceWorker
+        return !!sw && typeof sw.register === 'function'
+      }
+
+      if (hasInit(sdkUnknown))
+        await sdkUnknown.init()
+
+      // Notify the platform that the app is ready
+      this.sdk.emit('loaded')
+
+      // The host SDK does not expose serviceWorker on the BastyonSdk instance.
+      // Registration is handled by the host app (see pocketnet.gui/js/pwa-service-worker.js).
+      if (hasSWRegister(sdkUnknown))
+        await sdkUnknown.serviceWorker.register()
+
+      console.log('Bastyon SDK successfully initialized (compatible mode).')
     }
     catch (error) {
       console.error('Error initializing Bastyon SDK:', error)
