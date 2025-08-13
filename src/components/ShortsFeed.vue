@@ -339,42 +339,53 @@ onBeforeUnmount(() => {
             <div class="desc">
               {{ it.description }}
             </div>
-            <div class="seekbar">
+          </div>
+          <div class="seekbar">
+            <div
+              class="seekbar-track"
+              @click.stop.prevent="onSeekClick(idx, $event)"
+              @pointerdown="onSeekPointerDown(idx, $event)"
+              @mousemove="onTrackHoverMove(idx, $event)"
+              @mouseleave="onTrackHoverLeave"
+            >
               <div
-                class="seekbar-track"
-                @click.stop.prevent="onSeekClick(idx, $event)"
-                @pointerdown="onSeekPointerDown(idx, $event)"
-                @mousemove="onTrackHoverMove(idx, $event)"
-                @mouseleave="onTrackHoverLeave"
+                v-for="(r, rIdx) in (buffered[idx]?.ranges || [])"
+                :key="rIdx"
+                class="buffer-segment"
+                :style="{
+                  left: buffered[idx]?.duration
+                    ? `${((r.start / buffered[idx].duration) * 100).toFixed(2)}%`
+                    : '0%',
+                  width: buffered[idx]?.duration
+                    ? `${(((r.end - r.start) / buffered[idx].duration) * 100).toFixed(2)}%`
+                    : '0%',
+                }"
+              />
+              <div
+                class="seekbar-fill"
+                :style="{
+                  width: `${(
+                    progress[idx]?.duration
+                      ? ((isScrubbing && scrubIdx === idx)
+                        ? (scrubPct * 100)
+                        : Math.min(100, Math.max(0, (progress[idx].currentTime / progress[idx].duration) * 100)))
+                      : 0
+                  ).toFixed(2)}%`,
+                }"
+              />
+              <div
+                v-if="isScrubbing && scrubIdx === idx"
+                class="seekbar-thumb"
+                :style="{
+                  left: `${(scrubPct * 100).toFixed(2)}%`,
+                }"
+              />
+              <div
+                v-if="showTooltip && tooltipIdx === idx"
+                class="seekbar-tooltip"
+                :style="{ left: `${(tooltipPct * 100).toFixed(2)}%` }"
               >
-                <div
-                  v-for="(r, rIdx) in (buffered[idx]?.ranges || [])"
-                  :key="rIdx"
-                  class="buffer-segment"
-                  :style="{
-                    left: buffered[idx]?.duration
-                      ? `${((r.start / buffered[idx].duration) * 100).toFixed(2)}%`
-                      : '0%',
-                    width: buffered[idx]?.duration
-                      ? `${(((r.end - r.start) / buffered[idx].duration) * 100).toFixed(2)}%`
-                      : '0%',
-                  }"
-                />
-                <div
-                  class="seekbar-fill"
-                  :style="{
-                    width: progress[idx]?.duration
-                      ? `${Math.min(100, Math.max(0, (progress[idx].currentTime / progress[idx].duration) * 100)).toFixed(2)}%`
-                      : '0%',
-                  }"
-                />
-                <div
-                  v-if="showTooltip && tooltipIdx === idx"
-                  class="seekbar-tooltip"
-                  :style="{ left: `${(tooltipPct * 100).toFixed(2)}%` }"
-                >
-                  {{ formatTime((progress[idx]?.duration || buffered[idx]?.duration || 0) * tooltipPct) }}
-                </div>
+                {{ formatTime((progress[idx]?.duration || buffered[idx]?.duration || 0) * tooltipPct) }}
               </div>
             </div>
           </div>
@@ -496,13 +507,16 @@ onBeforeUnmount(() => {
 }
 .seekbar {
   margin-top: 8px;
+  position: relative;
+  left: -16px; /* extend beyond overlay horizontal padding */
+  width: calc(100% + 32px);
 }
 .seekbar-track {
   width: 100%;
   height: 4px;
   background: rgba(255, 255, 255, 0.25);
   border-radius: 999px;
-  overflow: hidden;
+  overflow: visible; /* allow tooltip/thumb to render outside */
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
   position: relative;
   cursor: pointer;
@@ -528,6 +542,19 @@ onBeforeUnmount(() => {
   transition: width 120ms linear;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06) inset;
 }
+/* Drag handle */
+.seekbar-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #6ec1ff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3);
+  pointer-events: none; /* track handles pointer events */
+  z-index: 2;
+}
 .seekbar-tooltip {
   position: absolute;
   bottom: 100%;
@@ -540,6 +567,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   white-space: nowrap;
   pointer-events: none;
+  z-index: 3;
 }
 .seekbar-tooltip::after {
   content: '';
