@@ -6,7 +6,7 @@
   "start_url": "index.html",
   "version": "0.0.1",
   "scope": "apptest.bastyon.ir",
-  "permissions": {
-    "allow-popups": true
-  }
+  "permissions": [
+    "allow-popups"
+  ]
 }
