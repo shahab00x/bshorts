@@ -38,6 +38,111 @@ const showTooltip = ref(false)
 const tooltipIdx = ref<number | null>(null)
 const tooltipPct = ref(0)
 
+// Drawer state
+const showDescriptionDrawer = ref(false)
+const showCommentsDrawer = ref(false)
+
+// Current item helpers
+const currentItem = computed(() => items.value[currentIndex.value] || null)
+
+function getCaption(it: any): string {
+  return (
+    it?.rawPost?.caption
+    ?? it?.rawPost?.title
+    ?? it?.caption
+    ?? it?.title
+    ?? ''
+  )
+}
+function getDescription(it: any): string {
+  return (
+    it?.rawPost?.description
+    ?? it?.description
+    ?? ''
+  )
+}
+function parseHashtags(val: any): string[] {
+  if (!val)
+    return []
+  // Some playlists store hashtags as a JSON-encoded string
+  try {
+    if (typeof val === 'string') {
+      const trimmed = val.trim()
+      if (trimmed.startsWith('[')) {
+        const arr = JSON.parse(trimmed)
+        return Array.isArray(arr) ? arr.map((s: any) => String(s)) : []
+      }
+      // Fallback: comma or space separated
+      return trimmed
+        .replace(/^[#\s]+/, '')
+        .split(/[\s,]+/)
+        .filter(Boolean)
+    }
+    if (Array.isArray(val))
+      return val.map(v => String(v))
+  }
+  catch {
+    // ignore
+  }
+  return []
+}
+
+// Minimal HTML escaper + linkifier (URLs -> <a>)
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+function linkify(s: string): string {
+  const escaped = escapeHtml(s)
+  // Line breaks to <br>
+  const withBreaks = escaped.replace(/\n/g, '<br/>')
+  // URL regex (simple)
+  const urlRe = /(https?:\/\/[^\s<]+)/gi
+  return withBreaks.replace(urlRe, m => `<a href="${m}" target="_blank" rel="noopener nofollow">${m}</a>`)
+}
+
+const descCaption = computed(() => getCaption(currentItem.value))
+const descText = computed(() => getDescription(currentItem.value))
+const descHtml = computed(() => linkify(descText.value || ''))
+const descTags = computed(() => parseHashtags(currentItem.value?.rawPost?.hashtags ?? (currentItem.value as any)?.hashtags))
+
+const commentsCount = computed(() => {
+  const c = (currentItem.value as any)?.comments ?? (currentItem.value as any)?.rawPost?.comments
+  const n = Number(c)
+  return Number.isFinite(n) && n >= 0 ? n : 0
+})
+const commentsHeightPct = computed(() => {
+  const n = commentsCount.value
+  // Grow with comment volume, cap at ~66.67vh
+  if (n >= 100)
+    return 66.6667
+  if (n >= 50)
+    return 60
+  if (n >= 20)
+    return 56
+  if (n >= 5)
+    return 46
+  return 36 // minimum feel for empty/few comments
+})
+
+function toggleCommentsDrawer(ev?: Event) {
+  ev?.stopPropagation?.()
+  showCommentsDrawer.value = !showCommentsDrawer.value
+  if (showCommentsDrawer.value)
+    showDescriptionDrawer.value = false
+}
+function openDescriptionDrawer(ev?: Event) {
+  ev?.stopPropagation?.()
+  showDescriptionDrawer.value = true
+  showCommentsDrawer.value = false
+}
+function closeAnyDrawer() {
+  showDescriptionDrawer.value = false
+  showCommentsDrawer.value = false
+}
+
 // Pager container + navigation state
 const pagerRef = ref<HTMLElement | null>(null)
 const isPaging = ref(false)
@@ -306,6 +411,10 @@ function onKeyDown(ev: KeyboardEvent) {
     ev.preventDefault()
     prevPage()
   }
+  else if (ev.key === 'Escape') {
+    ev.preventDefault()
+    closeAnyDrawer()
+  }
 }
 
 onMounted(() => {
@@ -389,7 +498,7 @@ onBeforeUnmount(() => {
             <div class="uploader">
               {{ vi.item.uploader || 'Unknown' }}
             </div>
-            <div class="desc">
+            <div class="desc" title="View description" @click.stop="openDescriptionDrawer">
               {{ vi.item.description }}
             </div>
           </div>
@@ -443,7 +552,63 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
+        <!-- Right-side controls -->
+        <div v-if="vi.idx === currentIndex" class="right-controls">
+          <button class="comments-btn" aria-label="Open comments" @click.stop="toggleCommentsDrawer">
+            💬
+            <span v-if="commentsCount" class="comments-badge">{{ commentsCount }}</span>
+          </button>
+        </div>
       </section>
+    </div>
+    <!-- Screen tint overlay when any drawer is open -->
+    <div class="screen-tint" :class="{ visible: showDescriptionDrawer || showCommentsDrawer }" @click="closeAnyDrawer" />
+
+    <!-- Description Drawer (right side) -->
+    <div class="drawer-base description-drawer" :class="{ open: showDescriptionDrawer }" @click.self="closeAnyDrawer">
+      <div class="drawer-content" @click.stop>
+        <div class="drawer-header">
+          <h3>Description</h3>
+        </div>
+        <div class="drawer-body">
+          <template v-if="descCaption">
+            <h4 class="desc-title">
+              {{ descCaption }}
+            </h4>
+          </template>
+          <div class="desc-text" v-html="descHtml" />
+          <div v-if="descTags.length" class="hashtags-row">
+            <a
+              v-for="(tag, i) in descTags"
+              :key="i"
+              class="hashtag"
+              :href="`https://bastyon.com/index?sst=${encodeURIComponent(tag)}`"
+              target="_blank"
+              rel="noopener"
+            >#{{ tag }}</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Comments Drawer (right side) -->
+    <div
+      class="drawer-base comments-drawer"
+      :class="{ open: showCommentsDrawer }"
+      :style="{ '--comments-height': `${commentsHeightPct}vh` }"
+      @click.self="closeAnyDrawer"
+    >
+      <div class="drawer-content" @click.stop>
+        <div class="drawer-header">
+          <h3>Comments</h3>
+        </div>
+        <div class="drawer-body">
+          <div v-if="commentsCount === 0" class="no-comments">
+            No comments yet
+          </div>
+          <!-- Integrate comments list here when backend is ready -->
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -570,6 +735,7 @@ onBeforeUnmount(() => {
 .desc {
   opacity: 0.9;
   font-size: 0.95rem;
+  cursor: pointer;
 }
 .seekbar {
   margin-top: 8px;
@@ -651,5 +817,141 @@ onBeforeUnmount(() => {
 }
 .spacer {
   width: 100%;
+}
+
+/* Right-side controls */
+.right-controls {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 8;
+}
+.comments-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.comments-btn .comments-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #ff5252;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+/* Screen tint */
+.screen-tint {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+  z-index: 9;
+}
+.screen-tint.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Drawers */
+.drawer-base {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  transform: translateY(100%);
+  transition: transform 240ms ease;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+}
+.drawer-base.open {
+  transform: translateY(0%);
+}
+.drawer-content {
+  width: 100%;
+  height: 100%;
+  background: rgba(16, 16, 16, 0.98);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+}
+.drawer-header {
+  position: sticky;
+  top: 0;
+  background: rgba(16, 16, 16, 1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px 16px;
+  z-index: 1;
+}
+.drawer-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.drawer-body {
+  padding: 12px 16px 16px 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.drawer-body a {
+  color: #6ec1ff;
+  text-decoration: underline;
+}
+
+/* Description bottom sheet: min 1/4, max 1/2 viewport height */
+.description-drawer {
+  height: clamp(25vh, 40vh, 50vh);
+}
+.desc-title {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.desc-text {
+  line-height: 1.4;
+}
+.hashtags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.hashtags-row .hashtag {
+  color: #9bd1ff;
+  text-decoration: none;
+  background: rgba(110, 193, 255, 0.12);
+  border: 1px solid rgba(110, 193, 255, 0.25);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* Comments bottom sheet: up to 2/3 viewport height, dynamic */
+.comments-drawer {
+  height: min(var(--comments-height, 50vh), 66.6667vh);
+}
+.no-comments {
+  opacity: 0.8;
 }
 </style>
