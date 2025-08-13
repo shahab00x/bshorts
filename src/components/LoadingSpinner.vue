@@ -2,10 +2,12 @@
 const props = withDefaults(defineProps<{
   size?: number | string
   speed?: number
+  pad?: number | string
   ariaLabel?: string
 }>(), {
   size: '64px',
   speed: 1.2,
+  pad: '12%',
   ariaLabel: 'Loading',
 })
 
@@ -13,6 +15,9 @@ const sizeCss = computed(() =>
   typeof props.size === 'number' ? `${props.size}px` : props.size,
 )
 const speedCss = computed(() => `${props.speed}s`)
+const padCss = computed(() =>
+  typeof props.pad === 'number' ? `${props.pad}px` : props.pad,
+)
 </script>
 
 <template>
@@ -21,27 +26,29 @@ const speedCss = computed(() => `${props.speed}s`)
     role="status"
     :aria-label="ariaLabel"
     aria-live="polite"
-    :style="{ '--size': sizeCss, '--speed': speedCss } as any"
+    :style="{ '--size': sizeCss, '--speed': speedCss, '--pad': padCss } as any"
   >
-    <!-- Static inner logo -->
-    <img
-      class="inner"
-      src="/inner_logo.svg"
-      alt=""
-      aria-hidden="true"
-      decoding="async"
-      fetchpriority="low"
-    >
-
-    <!-- Rotating outer logo -->
-    <div class="outer-wrap" aria-hidden="true">
+    <div class="content">
+      <!-- Static inner logo -->
       <img
-        class="outer"
-        src="/outer_logo.svg"
+        class="inner"
+        src="/inner_logo.svg"
         alt=""
+        aria-hidden="true"
         decoding="async"
         fetchpriority="low"
       >
+
+      <!-- Rotating outer logo -->
+      <div class="outer-wrap" aria-hidden="true">
+        <img
+          class="outer"
+          src="/outer_logo.svg"
+          alt=""
+          decoding="async"
+          fetchpriority="low"
+        >
+      </div>
     </div>
 
     <span class="sr-only">{{ ariaLabel }}</span>
@@ -58,6 +65,15 @@ const speedCss = computed(() => `${props.speed}s`)
   contain: layout paint;
 }
 
+.content {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(100% - var(--pad) * 2);
+  height: calc(100% - var(--pad) * 2);
+  transform: translate(-50%, -50%);
+}
+
 .inner,
 .outer {
   width: 100%;
@@ -65,33 +81,32 @@ const speedCss = computed(() => `${props.speed}s`)
   display: block;
 }
 
-/* Center the inner (static) */
+/* Fill the content box with the inner (static) */
 .inner {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  will-change: transform;
-}
-
-/* Center and rotate the outer */
-.outer-wrap {
-  position: absolute;
-  left: 50%;
-  top: 50%;
+  left: 0;
+  top: 0;
   width: 100%;
   height: 100%;
-  transform: translate(-50%, -50%);
+}
+
+/* Rotate the outer inside the content box */
+.outer-wrap {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
   animation: spinner-rotate var(--speed) linear infinite;
   will-change: transform;
 }
 
 @keyframes spinner-rotate {
   0% {
-    transform: translate(-50%, -50%) rotate(0deg);
+    transform: rotate(0deg);
   }
   100% {
-    transform: translate(-50%, -50%) rotate(360deg);
+    transform: rotate(360deg);
   }
 }
 
