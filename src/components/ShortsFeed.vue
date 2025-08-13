@@ -246,6 +246,7 @@ onBeforeUnmount(() => {
   pointer-events: none; /* do not block taps */
   opacity: 0;
   transition: opacity 0.25s ease;
+  transform: translateY(-8%);
 }
 .overlay-center.visible {
   opacity: 1;
