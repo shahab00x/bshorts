@@ -84,10 +84,10 @@ const padCss = computed(() =>
 /* Fill the content box with the inner (static) */
 .inner {
   position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
+  left: 8%;
+  top: 8%;
+  width: 85%;
+  height: 85%;
 }
 
 /* Rotate the outer inside the content box */

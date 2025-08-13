@@ -42,6 +42,14 @@ const tooltipPct = ref(0)
 const showDescriptionDrawer = ref(false)
 const showCommentsDrawer = ref(false)
 
+// Drawer drag-to-close state
+const draggingWhich = ref<'desc' | 'comments' | null>(null)
+const descDragOffset = ref(0)
+const commentsDragOffset = ref(0)
+let drawerDragStartY = 0
+let drawerStartedOnHeader = false
+let drawerBodyWasAtTop = false
+
 // Current item helpers
 const currentItem = computed(() => items.value[currentIndex.value] || null)
 
@@ -141,6 +149,77 @@ function openDescriptionDrawer(ev?: Event) {
 function closeAnyDrawer() {
   showDescriptionDrawer.value = false
   showCommentsDrawer.value = false
+}
+
+function closeDrawer(which: 'desc' | 'comments') {
+  if (which === 'desc')
+    showDescriptionDrawer.value = false
+  else
+    showCommentsDrawer.value = false
+}
+
+function onDrawerTouchStart(which: 'desc' | 'comments', ev: TouchEvent, fromHeader = false) {
+  const t = ev.touches && ev.touches[0]
+  if (!t)
+    return
+  draggingWhich.value = which
+  drawerDragStartY = t.clientY
+  drawerStartedOnHeader = !!fromHeader
+  // When starting from header, we allow immediate drag
+  drawerBodyWasAtTop = true
+  if (fromHeader)
+    ev.preventDefault()
+}
+
+function onDrawerBodyTouchStart(which: 'desc' | 'comments', ev: TouchEvent) {
+  const t = ev.touches && ev.touches[0]
+  if (!t)
+    return
+  const el = ev.currentTarget as HTMLElement | null
+  draggingWhich.value = which
+  drawerDragStartY = t.clientY
+  drawerStartedOnHeader = false
+  drawerBodyWasAtTop = (el?.scrollTop || 0) <= 0
+}
+
+function onDrawerTouchMove(ev: TouchEvent) {
+  if (!draggingWhich.value)
+    return
+  const t = ev.touches && ev.touches[0]
+  if (!t)
+    return
+  const dy = t.clientY - drawerDragStartY
+  const allowDrag = drawerStartedOnHeader ? dy > 0 : (drawerBodyWasAtTop && dy > 0)
+  if (!allowDrag) {
+    // reset offsets while not dragging
+    if (draggingWhich.value === 'desc')
+      descDragOffset.value = 0
+    else
+      commentsDragOffset.value = 0
+    return
+  }
+  // Apply drag offset (only downward)
+  const offset = Math.max(0, dy)
+  if (draggingWhich.value === 'desc')
+    descDragOffset.value = offset
+  else
+    commentsDragOffset.value = offset
+  // prevent page/body scroll while dragging the sheet
+  ev.preventDefault()
+}
+
+function onDrawerTouchEnd() {
+  if (!draggingWhich.value)
+    return
+  const which = draggingWhich.value
+  const offset = which === 'desc' ? descDragOffset.value : commentsDragOffset.value
+  const threshold = 60
+  if (offset > threshold)
+    closeDrawer(which)
+  // reset drag state
+  descDragOffset.value = 0
+  commentsDragOffset.value = 0
+  draggingWhich.value = null
 }
 
 // Pager container + navigation state
@@ -564,13 +643,28 @@ onBeforeUnmount(() => {
     <!-- Screen tint overlay when any drawer is open -->
     <div class="screen-tint" :class="{ visible: showDescriptionDrawer || showCommentsDrawer }" @click="closeAnyDrawer" />
 
-    <!-- Description Drawer (right side) -->
-    <div class="drawer-base description-drawer" :class="{ open: showDescriptionDrawer }" @click.self="closeAnyDrawer">
+    <!-- Description Bottom Sheet -->
+    <div
+      class="drawer-base description-drawer"
+      :class="{ open: showDescriptionDrawer, dragging: draggingWhich === 'desc' }"
+      :style="draggingWhich === 'desc' ? { transform: `translateY(${descDragOffset}px)` } : null"
+      @click.self="closeAnyDrawer"
+    >
       <div class="drawer-content" @click.stop>
-        <div class="drawer-header">
+        <div
+          class="drawer-header"
+          @touchstart="onDrawerTouchStart('desc', $event, true)"
+          @touchmove="onDrawerTouchMove($event)"
+          @touchend="onDrawerTouchEnd"
+        >
           <h3>Description</h3>
         </div>
-        <div class="drawer-body">
+        <div
+          class="drawer-body"
+          @touchstart="onDrawerBodyTouchStart('desc', $event)"
+          @touchmove="onDrawerTouchMove($event)"
+          @touchend="onDrawerTouchEnd"
+        >
           <template v-if="descCaption">
             <h4 class="desc-title">
               {{ descCaption }}
@@ -594,15 +688,28 @@ onBeforeUnmount(() => {
     <!-- Comments Drawer (right side) -->
     <div
       class="drawer-base comments-drawer"
-      :class="{ open: showCommentsDrawer }"
-      :style="{ '--comments-height': `${commentsHeightPct}vh` }"
+      :class="{ open: showCommentsDrawer, dragging: draggingWhich === 'comments' }"
+      :style="[
+        { '--comments-height': `${commentsHeightPct}vh` },
+        draggingWhich === 'comments' ? { transform: `translateY(${commentsDragOffset}px)` } : null,
+      ]"
       @click.self="closeAnyDrawer"
     >
       <div class="drawer-content" @click.stop>
-        <div class="drawer-header">
+        <div
+          class="drawer-header"
+          @touchstart="onDrawerTouchStart('comments', $event, true)"
+          @touchmove="onDrawerTouchMove($event)"
+          @touchend="onDrawerTouchEnd"
+        >
           <h3>Comments</h3>
         </div>
-        <div class="drawer-body">
+        <div
+          class="drawer-body"
+          @touchstart="onDrawerBodyTouchStart('comments', $event)"
+          @touchmove="onDrawerTouchMove($event)"
+          @touchend="onDrawerTouchEnd"
+        >
           <div v-if="commentsCount === 0" class="no-comments">
             No comments yet
           </div>
@@ -890,6 +997,9 @@ onBeforeUnmount(() => {
 .drawer-base.open {
   transform: translateY(0%);
 }
+.drawer-base.dragging {
+  transition: none;
+}
 .drawer-content {
   width: 100%;
   height: 100%;
@@ -905,6 +1015,10 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding: 12px 16px;
   z-index: 1;
+  text-align: center;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .drawer-header h3 {
   margin: 0;
