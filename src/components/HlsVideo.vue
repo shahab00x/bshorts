@@ -90,7 +90,7 @@ watch(() => props.shouldPlay, async (play) => {
       await el.play()
     }
     catch (err) {
-      /* ignore autoplay errors (gesture required etc.) */
+      // ignore autoplay errors (gesture required etc.)
       void err
     }
   }
