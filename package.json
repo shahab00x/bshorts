@@ -9,7 +9,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "build": "vite build",
-    "dev": "vite --port 3333 --open",
+    "dev": "vite --port 3333 --host",
     "lint": "eslint .",
     "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview",
