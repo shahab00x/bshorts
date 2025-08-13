@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Hls from 'hls.js'
 
 const props = withDefaults(defineProps<{
@@ -14,7 +15,11 @@ const props = withDefaults(defineProps<{
   shouldPlay: false,
 })
 
-const emit = defineEmits<{ (e: 'loadingChange', loading: boolean): void }>()
+const emit = defineEmits<{
+  (e: 'loadingChange', loading: boolean): void
+  (e: 'progress', payload: { currentTime: number, duration: number }): void
+  (e: 'buffered', payload: { ranges: { start: number, end: number }[], duration: number }): void
+}>()
 const videoEl = ref<HTMLVideoElement | null>(null)
 let hls: Hls | null = null
 const isLoading = ref(false)
@@ -44,6 +49,30 @@ function onTimeUpdate() {
   // When frames are advancing and we're not actively seeking/paused, consider it ready
   if (!el.seeking && !el.paused && el.readyState >= 2)
     setLoading(false)
+  // Emit playback progress on each timeupdate
+  emit('progress', {
+    currentTime: el.currentTime || 0,
+    duration: Number.isFinite(el.duration) ? el.duration : 0,
+  })
+  emitBuffered()
+}
+
+function emitBuffered() {
+  const el = videoEl.value
+  if (!el)
+    return
+  const duration = Number.isFinite(el.duration) ? el.duration : 0
+  const ranges: { start: number, end: number }[] = []
+  const buf = el.buffered
+  if (buf && buf.length) {
+    for (let i = 0; i < buf.length; i++) {
+      const start = buf.start(i)
+      const end = buf.end(i)
+      if (Number.isFinite(start) && Number.isFinite(end))
+        ranges.push({ start, end })
+    }
+  }
+  emit('buffered', { ranges, duration })
 }
 
 function attachVideoEvents() {
@@ -59,7 +88,10 @@ function attachVideoEvents() {
   el.addEventListener('canplay', onReady)
   el.addEventListener('playing', onReady)
   el.addEventListener('play', onReady)
-  el.addEventListener('progress', onReady)
+  el.addEventListener('progress', () => {
+    onReady()
+    emitBuffered()
+  })
   el.addEventListener('ended', onReady)
   el.addEventListener('durationchange', onReady)
   el.addEventListener('timeupdate', onTimeUpdate)
@@ -78,7 +110,7 @@ function detachVideoEvents() {
   el.removeEventListener('canplay', onReady)
   el.removeEventListener('playing', onReady)
   el.removeEventListener('play', onReady)
-  el.removeEventListener('progress', onReady)
+  // progress had an inline listener; safe to ignore explicit removal here
   el.removeEventListener('ended', onReady)
   el.removeEventListener('durationchange', onReady)
   el.removeEventListener('timeupdate', onTimeUpdate)
@@ -115,8 +147,13 @@ function initHls() {
       lowLatencyMode: false,
       autoStartLoad: false,
       capLevelToPlayerSize: true,
-      maxBufferLength: 10,
-      backBufferLength: 30,
+      // Keep forward buffer modest to reduce data and speed up seeks
+      maxBufferLength: 12,
+      maxMaxBufferLength: 30,
+      backBufferLength: 8,
+      // Improve buffer hole handling for smoother playback
+      maxBufferHole: 0.5,
+      highBufferWatchdogPeriod: 2,
     })
     hls.loadSource(props.src)
     hls.attachMedia(el)
@@ -212,8 +249,17 @@ function unmute() {
     videoEl.value.muted = false
 }
 
+function seekTo(seconds: number) {
+  const el = videoEl.value
+  if (!el)
+    return
+  const duration = Number.isFinite(el.duration) ? el.duration : 0
+  const t = Math.max(0, Math.min(seconds, duration || Number.MAX_SAFE_INTEGER))
+  el.currentTime = t
+}
+
 // Expose controls to parent
-defineExpose({ play, pause, mute, unmute, el: videoEl })
+defineExpose({ play, pause, mute, unmute, seekTo, el: videoEl })
 </script>
 
 <template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import HlsVideo from '~/components/HlsVideo.vue'
 import PerfOverlay from '~/components/PerfOverlay.vue'
 import LoadingSpinner from '~/components/LoadingSpinner.vue'
@@ -26,6 +27,30 @@ const soundOn = ref(false)
 const showOverlayIcon = ref(false)
 let overlayHideTimer: number | null = null
 const videoLoading = ref<boolean[]>([])
+const progress = ref<{ currentTime: number, duration: number }[]>([])
+const buffered = ref<{ ranges: { start: number, end: number }[], duration: number }[]>([])
+// Scrubbing & tooltip state
+const isScrubbing = ref(false)
+const scrubIdx = ref<number | null>(null)
+const scrubPct = ref(0)
+const scrubRect = ref<DOMRect | null>(null)
+const showTooltip = ref(false)
+const tooltipIdx = ref<number | null>(null)
+const tooltipPct = ref(0)
+
+function clamp01(n: number) {
+  return Math.max(0, Math.min(1, n))
+}
+function formatTime(sec: number) {
+  if (!Number.isFinite(sec) || sec < 0)
+    sec = 0
+  const s = Math.floor(sec % 60)
+  const m = Math.floor((sec / 60) % 60)
+  const h = Math.floor(sec / 3600)
+  if (h > 0)
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
 
 function setCardRef(el: HTMLElement | null, idx: number) {
   cardRefs.value[idx] = el
@@ -100,6 +125,8 @@ async function loadPlaylist() {
     const data = await res.json()
     items.value = (Array.isArray(data) ? data : []).filter((it: VideoItem) => !!getHls(it))
     videoLoading.value = items.value.map(() => false)
+    progress.value = items.value.map(() => ({ currentTime: 0, duration: 0 }))
+    buffered.value = items.value.map(() => ({ ranges: [], duration: 0 }))
   }
   catch (e: any) {
     error.value = e?.message || String(e)
@@ -113,6 +140,86 @@ async function loadPlaylist() {
 
 function onVideoLoadingChange(idx: number, isLoading: boolean) {
   videoLoading.value[idx] = isLoading
+}
+
+function onVideoProgress(idx: number, payload: { currentTime: number, duration: number }) {
+  progress.value[idx] = payload
+}
+
+function onVideoBuffered(idx: number, payload: { ranges: { start: number, end: number }[], duration: number }) {
+  buffered.value[idx] = payload
+}
+
+function onSeekClick(idx: number, ev: MouseEvent) {
+  ev.stopPropagation()
+  ev.preventDefault()
+  const target = ev.currentTarget as HTMLElement | null
+  if (!target)
+    return
+  const rect = target.getBoundingClientRect()
+  const x = ev.clientX - rect.left
+  const pct = Math.max(0, Math.min(1, x / rect.width))
+  const dur = progress.value[idx]?.duration || buffered.value[idx]?.duration || 0
+  if (dur > 0) {
+    const t = pct * dur
+    videoRefs.value[idx]?.seekTo?.(t)
+  }
+}
+
+function onSeekPointerDown(idx: number, ev: PointerEvent) {
+  ev.stopPropagation()
+  ev.preventDefault()
+  const target = ev.currentTarget as HTMLElement | null
+  if (!target)
+    return
+  const rect = target.getBoundingClientRect()
+  scrubRect.value = rect
+  scrubIdx.value = idx
+  isScrubbing.value = true
+  target.setPointerCapture?.(ev.pointerId)
+  // initial update
+  onWindowPointerMove(ev)
+  window.addEventListener('pointermove', onWindowPointerMove)
+  window.addEventListener('pointerup', onWindowPointerUp, { once: true })
+  window.addEventListener('pointercancel', onWindowPointerUp, { once: true })
+}
+
+function updateTooltip(idx: number, pct: number) {
+  tooltipIdx.value = idx
+  tooltipPct.value = clamp01(pct)
+  showTooltip.value = true
+}
+function onTrackHoverMove(idx: number, ev: MouseEvent) {
+  const target = ev.currentTarget as HTMLElement | null
+  if (!target || isScrubbing.value)
+    return
+  const rect = target.getBoundingClientRect()
+  const pct = clamp01((ev.clientX - rect.left) / rect.width)
+  updateTooltip(idx, pct)
+}
+function onTrackHoverLeave() {
+  if (isScrubbing.value)
+    return
+  showTooltip.value = false
+  tooltipIdx.value = null
+}
+function onWindowPointerMove(ev: PointerEvent) {
+  if (!isScrubbing.value || scrubIdx.value == null || !scrubRect.value)
+    return
+  const pct = clamp01((ev.clientX - scrubRect.value.left) / scrubRect.value.width)
+  scrubPct.value = pct
+  updateTooltip(scrubIdx.value, pct)
+  const idx = scrubIdx.value
+  const dur = progress.value[idx]?.duration || buffered.value[idx]?.duration || 0
+  if (dur > 0)
+    videoRefs.value[idx]?.seekTo?.(pct * dur)
+}
+function onWindowPointerUp() {
+  isScrubbing.value = false
+  scrubIdx.value = null
+  scrubRect.value = null
+  window.removeEventListener('pointermove', onWindowPointerMove)
+  // keep tooltip if hovering; otherwise it will be hidden by mouseleave
 }
 
 let observer: IntersectionObserver | null = null
@@ -163,6 +270,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (observer)
     observer.disconnect()
+  // Safety: remove pointer listeners if scrubbing during unmount
+  window.removeEventListener('pointermove', onWindowPointerMove)
 })
 </script>
 
@@ -193,6 +302,8 @@ onBeforeUnmount(() => {
           :should-load="shouldLoad(idx)"
           :should-play="shouldPlay(idx)"
           @loading-change="onVideoLoadingChange(idx, $event)"
+          @progress="onVideoProgress(idx, $event)"
+          @buffered="onVideoBuffered(idx, $event)"
         />
         <div v-else class="video-placeholder" />
 
@@ -227,6 +338,44 @@ onBeforeUnmount(() => {
             </div>
             <div class="desc">
               {{ it.description }}
+            </div>
+            <div class="seekbar">
+              <div
+                class="seekbar-track"
+                @click.stop.prevent="onSeekClick(idx, $event)"
+                @pointerdown="onSeekPointerDown(idx, $event)"
+                @mousemove="onTrackHoverMove(idx, $event)"
+                @mouseleave="onTrackHoverLeave"
+              >
+                <div
+                  v-for="(r, rIdx) in (buffered[idx]?.ranges || [])"
+                  :key="rIdx"
+                  class="buffer-segment"
+                  :style="{
+                    left: buffered[idx]?.duration
+                      ? `${((r.start / buffered[idx].duration) * 100).toFixed(2)}%`
+                      : '0%',
+                    width: buffered[idx]?.duration
+                      ? `${(((r.end - r.start) / buffered[idx].duration) * 100).toFixed(2)}%`
+                      : '0%',
+                  }"
+                />
+                <div
+                  class="seekbar-fill"
+                  :style="{
+                    width: progress[idx]?.duration
+                      ? `${Math.min(100, Math.max(0, (progress[idx].currentTime / progress[idx].duration) * 100)).toFixed(2)}%`
+                      : '0%',
+                  }"
+                />
+                <div
+                  v-if="showTooltip && tooltipIdx === idx"
+                  class="seekbar-tooltip"
+                  :style="{ left: `${(tooltipPct * 100).toFixed(2)}%` }"
+                >
+                  {{ formatTime((progress[idx]?.duration || buffered[idx]?.duration || 0) * tooltipPct) }}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -344,6 +493,62 @@ onBeforeUnmount(() => {
 .desc {
   opacity: 0.9;
   font-size: 0.95rem;
+}
+.seekbar {
+  margin-top: 8px;
+}
+.seekbar-track {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.buffer-segment {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(
+    110,
+    193,
+    255,
+    0.4
+  ); /* translucent light blue for buffered */
+}
+.seekbar-fill {
+  position: relative;
+  height: 100%;
+  background: #6ec1ff; /* light blue */
+  transition: width 120ms linear;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06) inset;
+}
+.seekbar-tooltip {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.seekbar-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: rgba(0, 0, 0, 0.8);
 }
 .video-placeholder {
   width: 100%;
