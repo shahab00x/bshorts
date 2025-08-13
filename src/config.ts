@@ -4,7 +4,7 @@
 export const appConfig = {
   // Number of videos ahead of the current one to render/load.
   // Example: 3 means current + next 3 will be rendered and preloaded.
-  preloadAhead: 1,
+  preloadAhead: 0,
 }
 
 export type AppConfig = typeof appConfig

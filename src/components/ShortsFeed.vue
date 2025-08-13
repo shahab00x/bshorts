@@ -18,6 +18,9 @@ const error = ref<string | null>(null)
 
 const cardRefs = ref<(HTMLElement | null)[]>([])
 const currentIndex = ref(0)
+const paused = ref(false)
+const showOverlayIcon = ref(false)
+let overlayHideTimer: number | null = null
 
 function setCardRef(el: HTMLElement | null, idx: number) {
   cardRefs.value[idx] = el
@@ -43,7 +46,34 @@ function shouldLoad(idx: number) {
 }
 
 function shouldPlay(idx: number) {
-  return idx === currentIndex.value
+  return idx === currentIndex.value && !paused.value
+}
+
+function togglePlay() {
+  paused.value = !paused.value
+  // Show overlay icon immediately on toggle
+  showOverlayIcon.value = true
+  // Manage fade-out when unpausing
+  if (!paused.value) {
+    if (overlayHideTimer)
+      window.clearTimeout(overlayHideTimer)
+    overlayHideTimer = window.setTimeout(() => {
+      showOverlayIcon.value = false
+      overlayHideTimer = null
+    }, 1000)
+  }
+  else {
+    // When paused, keep icon visible
+    if (overlayHideTimer) {
+      window.clearTimeout(overlayHideTimer)
+      overlayHideTimer = null
+    }
+  }
+}
+
+function onSectionClick(idx: number) {
+  if (idx === currentIndex.value)
+    togglePlay()
 }
 
 async function loadPlaylist() {
@@ -85,8 +115,18 @@ function setupObserver() {
       }
     }
 
-    if (bestIdx >= 0)
-      currentIndex.value = bestIdx
+    if (bestIdx >= 0) {
+      if (bestIdx !== currentIndex.value) {
+        currentIndex.value = bestIdx
+        // reset paused when switching items to auto-play the new one
+        paused.value = false
+        // hide overlay icon and clear timer on item change
+        if (overlayHideTimer)
+          window.clearTimeout(overlayHideTimer)
+        overlayHideTimer = null
+        showOverlayIcon.value = false
+      }
+    }
   }, { threshold: [0, 0.25, 0.5, 0.6, 0.75, 1] })
 
   for (let i = 0; i < cardRefs.value.length; i++) {
@@ -122,6 +162,7 @@ onBeforeUnmount(() => {
         :ref="(el) => setCardRef(el as HTMLElement | null, idx)"
         class="shorts-item"
         :data-idx="idx"
+        @click="onSectionClick(idx)"
       >
         <HlsVideo
           v-if="inWindow(idx)"
@@ -133,6 +174,13 @@ onBeforeUnmount(() => {
         />
         <div v-else class="video-placeholder" />
 
+        <!-- Centered play/pause icon shown on user toggle -->
+        <div class="overlay-center" :class="{ visible: showOverlayIcon }">
+          <div class="play-icon" aria-hidden="true">
+            <span v-if="paused">▶</span>
+            <span v-else>❚❚</span>
+          </div>
+        </div>
         <div class="overlay">
           <div class="meta">
             <div class="uploader">
@@ -188,6 +236,31 @@ onBeforeUnmount(() => {
     rgba(0, 0, 0, 0.35) 60%,
     rgba(0, 0, 0, 0.65) 100%
   );
+}
+.overlay-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* do not block taps */
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.overlay-center.visible {
+  opacity: 1;
+}
+.play-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
 }
 .meta {
   max-width: 80ch;
