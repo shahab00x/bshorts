@@ -88,10 +88,16 @@ export class SdkService {
    * @example
    * SdkService.rpc('getnodeinfo').then((info) => console.log(info));
    */
-  public static async rpc(method: string, parameters?: unknown[]): Promise<unknown> {
+  public static async rpc(
+    method: string,
+    parameters: unknown[] = [],
+    options: Record<string, unknown> = {},
+  ): Promise<unknown> {
     this.ensureInitialized()
     try {
-      const result = await this.sdk!.rpc(method, parameters)
+      // Some host SDK builds expect an options object and read properties like `cachetime`.
+      // Ensure we always pass an object to avoid undefined access inside the host.
+      const result = await this.sdk!.rpc(method, parameters, options)
       return result
     }
     catch (error) {
