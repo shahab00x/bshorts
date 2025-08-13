@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import HlsVideo from '~/components/HlsVideo.vue'
+import { appConfig } from '~/config'
 
 interface PeertubeInfo { hlsUrl: string }
 
@@ -27,13 +28,18 @@ function getHls(item: VideoItem): string | null {
 }
 
 function inWindow(idx: number) {
-  // Only render current and next 3 items to limit downloads
-  return idx >= currentIndex.value && idx <= currentIndex.value + 3
+  // Render previous 1 and next N items to limit downloads
+  // N is configured via appConfig.preloadAhead
+  const start = Math.max(0, currentIndex.value - 1)
+  const end = currentIndex.value + appConfig.preloadAhead
+  return idx >= start && idx <= end
 }
 
 function shouldLoad(idx: number) {
-  // Load current and next 3
-  return idx >= currentIndex.value && idx <= currentIndex.value + 3
+  // Load previous 1 and next N (from appConfig.preloadAhead)
+  const start = Math.max(0, currentIndex.value - 1)
+  const end = currentIndex.value + appConfig.preloadAhead
+  return idx >= start && idx <= end
 }
 
 function shouldPlay(idx: number) {

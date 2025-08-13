@@ -47,9 +47,19 @@ function initHls() {
   }
 }
 
-onMounted(() => {
-  if (props.shouldLoad)
+onMounted(async () => {
+  if (props.shouldLoad && !hls)
     initHls()
+  if (props.shouldPlay) {
+    if (hls)
+      hls.startLoad()
+    try {
+      await videoEl.value?.play()
+    }
+    catch (err) {
+      void err
+    }
+  }
 })
 onBeforeUnmount(() => {
   teardown()
@@ -99,7 +109,7 @@ watch(() => props.shouldPlay, async (play) => {
     if (hls)
       hls.stopLoad()
   }
-})
+}, { immediate: true })
 
 function play() {
   videoEl.value?.play()
