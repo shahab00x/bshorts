@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import HlsVideo from '~/components/HlsVideo.vue'
 import PerfOverlay from '~/components/PerfOverlay.vue'
 import LoadingSpinner from '~/components/LoadingSpinner.vue'
@@ -20,6 +20,7 @@ interface VideoItem {
     title?: string
     caption?: string
     comments?: number
+    video_hash?: string
   }
 }
 
@@ -49,6 +50,85 @@ const tooltipPct = ref(0)
 // Drawer state
 const showDescriptionDrawer = ref(false)
 const showCommentsDrawer = ref(false)
+
+// Comments state (cache by post hash)
+interface CommentState { items: any[], loading: boolean, error: string | null, fetchedAt: number }
+const commentsByHash = ref<Record<string, CommentState>>({})
+
+const currentVideoHash = computed<string | null>(() => {
+  const it = items.value[currentIndex.value] as any
+  return it?.rawPost?.video_hash ?? null
+})
+
+const currentComments = computed<CommentState | undefined>(() => {
+  const h = currentVideoHash.value
+  return h ? commentsByHash.value[h] : undefined
+})
+
+function ensureCommentState(hash: string): CommentState {
+  if (!commentsByHash.value[hash])
+    commentsByHash.value[hash] = { items: [], loading: false, error: null, fetchedAt: 0 }
+  return commentsByHash.value[hash]
+}
+
+function getCommentText(c: any): string {
+  const t = c?.msg ?? c?.message ?? c?.text ?? c?.body ?? c?.content ?? ''
+  return typeof t === 'string' ? t : String(t ?? '')
+}
+
+async function fetchCommentsFor(hash: string, { force = false }: { force?: boolean } = {}) {
+  const state = ensureCommentState(hash)
+  if (state.loading)
+    return
+  if (!force && state.items.length > 0 && !state.error)
+    return
+  state.loading = true
+  state.error = null
+  try {
+    const res: any = await SdkService.rpc('getcomments', [hash, '', ''])
+    let items: any[] = []
+    if (Array.isArray(res))
+      items = res
+    else if (res?.comments && Array.isArray(res.comments))
+      items = res.comments
+    else if (res?.result && Array.isArray(res.result))
+      items = res.result
+    else if (res?.data && Array.isArray(res.data))
+      items = res.data
+    state.items = items
+    state.fetchedAt = Date.now()
+  }
+  catch (e: any) {
+    state.error = e?.message || String(e)
+  }
+  finally {
+    state.loading = false
+  }
+}
+
+function fetchCommentsForCurrentIfNeeded() {
+  const h = currentVideoHash.value
+  if (!h)
+    return
+  void fetchCommentsFor(h)
+}
+
+function refreshComments() {
+  const h = currentVideoHash.value
+  if (!h)
+    return
+  void fetchCommentsFor(h, { force: true })
+}
+
+// Load comments when opening the drawer or switching videos while open
+watch(showCommentsDrawer, (open) => {
+  if (open)
+    fetchCommentsForCurrentIfNeeded()
+})
+watch(currentIndex, () => {
+  if (showCommentsDrawer.value)
+    fetchCommentsForCurrentIfNeeded()
+})
 
 // Drawer drag-to-close state
 const draggingWhich = ref<'desc' | 'comments' | null>(null)
@@ -744,10 +824,28 @@ onBeforeUnmount(() => {
           @touchmove="onDrawerTouchMove($event)"
           @touchend="onDrawerTouchEnd"
         >
-          <div v-if="commentsCount === 0" class="no-comments">
+          <div v-if="!currentVideoHash" class="no-comments">
+            No post id
+          </div>
+          <div v-else-if="currentComments?.loading" class="center-msg">
+            <LoadingSpinner :size="40" aria-label="Loading comments" />
+          </div>
+          <div v-else-if="currentComments?.error" class="center-msg text-red">
+            {{ currentComments.error }}
+            <div style="margin-top: 8px;">
+              <button class="retry-btn" @click="refreshComments">
+                Retry
+              </button>
+            </div>
+          </div>
+          <div v-else-if="(currentComments?.items?.length || 0) === 0" class="no-comments">
             No comments yet
           </div>
-          <!-- Integrate comments list here when backend is ready -->
+          <ul v-else class="comments-list">
+            <li v-for="(c, i) in currentComments!.items" :key="i" class="comment-item">
+              <div class="comment-text" @click="onDescHtmlClick" v-html="linkify(getCommentText(c))" />
+            </li>
+          </ul>
         </div>
       </div>
     </div>
@@ -1101,5 +1199,31 @@ onBeforeUnmount(() => {
 }
 .no-comments {
   opacity: 0.8;
+}
+/* Comments list */
+.comments-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.comment-item {
+  padding: 6px 0 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.comment-item:last-child {
+  border-bottom: none;
+}
+.comment-text {
+  line-height: 1.35;
+}
+.retry-btn {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
 }
 </style>
