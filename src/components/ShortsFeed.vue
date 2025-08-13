@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import HlsVideo from '~/components/HlsVideo.vue'
+import PerfOverlay from '~/components/PerfOverlay.vue'
 import { appConfig } from '~/config'
 
 interface PeertubeInfo { hlsUrl: string }
@@ -17,6 +18,7 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 
 const cardRefs = ref<(HTMLElement | null)[]>([])
+const videoRefs = ref<any[]>([])
 const currentIndex = ref(0)
 const paused = ref(false)
 const soundOn = ref(false)
@@ -25,6 +27,10 @@ let overlayHideTimer: number | null = null
 
 function setCardRef(el: HTMLElement | null, idx: number) {
   cardRefs.value[idx] = el
+}
+
+function setVideoRef(el: any, idx: number) {
+  videoRefs.value[idx] = el
 }
 
 function getHls(item: VideoItem): string | null {
@@ -134,7 +140,7 @@ function setupObserver() {
         showOverlayIcon.value = false
       }
     }
-  }, { threshold: [0, 0.25, 0.5, 0.6, 0.75, 1] })
+  }, { threshold: [0, 0.25, 0.5, 0.6, 0.75, 1], rootMargin: '200px 0px' })
 
   for (let i = 0; i < cardRefs.value.length; i++) {
     const el = cardRefs.value[i]
@@ -173,13 +179,21 @@ onBeforeUnmount(() => {
       >
         <HlsVideo
           v-if="inWindow(idx)"
+          :ref="(el) => setVideoRef(el, idx)"
           :src="getHls(it)!"
-          :muted="!(soundOn && idx === currentIndex && !paused)"
           :loop="true"
+          :muted="!(soundOn && idx === currentIndex && !paused)"
           :should-load="shouldLoad(idx)"
           :should-play="shouldPlay(idx)"
         />
         <div v-else class="video-placeholder" />
+
+        <!-- Debug performance overlay -->
+        <PerfOverlay
+          v-if="appConfig.debugPerfOverlay && idx === currentIndex"
+          :video-el="videoRefs[idx]?.el ?? null"
+          :is-current="idx === currentIndex"
+        />
 
         <!-- Centered play/pause icon shown on user toggle -->
         <div class="overlay-center" :class="{ visible: showOverlayIcon }">
@@ -235,6 +249,11 @@ onBeforeUnmount(() => {
   position: relative;
   height: 100vh;
   scroll-snap-align: start;
+  /* Promote to its own layer for smoother scrolling */
+  will-change: transform;
+  transform: translateZ(0);
+  contain: content;
+  backface-visibility: hidden;
 }
 .overlay {
   position: absolute;

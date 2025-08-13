@@ -36,7 +36,15 @@ function initHls() {
     return
 
   if (Hls.isSupported()) {
-    hls = new Hls({ enableWorker: true, lowLatencyMode: true, autoStartLoad: false })
+    hls = new Hls({
+      enableWorker: true,
+      // VOD tuning
+      lowLatencyMode: false,
+      autoStartLoad: false,
+      capLevelToPlayerSize: true,
+      maxBufferLength: 10,
+      backBufferLength: 30,
+    })
     hls.loadSource(props.src)
     hls.attachMedia(el)
     // Do not autoplay here; playback driven by shouldPlay
