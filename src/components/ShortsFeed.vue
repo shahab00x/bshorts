@@ -142,7 +142,18 @@ function commentNameFor(c: any): string {
 
 // Author reputation helpers
 function getAuthorReputation(it: any): number | null {
-  // 1) Prefer inline JSON (legacy)
+  // 1) Prefer RPC-cached reputation by address
+  const hash = it?.rawPost?.video_hash
+  const addr = getAuthorAddress(it)
+    || (hash ? addressByHash.value[hash] : null)
+  if (addr && reputationsByAddress.value[addr] != null)
+    return Math.round(reputationsByAddress.value[addr])
+
+  // Proactively fetch if we have a hash but no cached rep yet
+  if (hash && !repLoadingByHash.value[hash] && !repErrorByHash.value[hash])
+    void fetchAuthorReputationByHash(hash)
+
+  // 2) Fallback to inline JSON (legacy)
   const v = (
     it?.rawPost?.author_reputation
     ?? (it as any)?.author_reputation
@@ -153,12 +164,6 @@ function getAuthorReputation(it: any): number | null {
     if (Number.isFinite(n))
       return Math.round(n)
   }
-
-  // 2) Fall back to RPC-cached reputation by address (if any)
-  const addr = getAuthorAddress(it)
-    || (it?.rawPost?.video_hash ? addressByHash.value[it.rawPost.video_hash] : null)
-  if (addr && reputationsByAddress.value[addr] != null)
-    return Math.round(reputationsByAddress.value[addr])
 
   return null
 }
