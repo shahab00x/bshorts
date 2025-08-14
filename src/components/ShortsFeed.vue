@@ -1422,6 +1422,7 @@ onBeforeUnmount(() => {
                 {{ vi.item.uploader || 'Unknown' }}
               </div>
               <button
+                v-if="false"
                 class="follow-btn"
                 :class="{ following: isAuthorFollowed(vi.item), loading: isFollowLoading(vi.item) }"
                 :disabled="isFollowLoading(vi.item) || isAuthorFollowed(vi.item)"
@@ -1487,9 +1488,12 @@ onBeforeUnmount(() => {
         </div>
         <!-- Right-side controls -->
         <div v-if="vi.idx === currentIndex" class="right-controls">
-          <button class="comments-btn" aria-label="Open comments" @click.stop="openCommentsInHost">
+          <button class="comments-btn" aria-label="Open comments" @click.stop="toggleCommentsDrawer">
             💬
             <span v-if="commentsCount" class="comments-badge">{{ commentsCount }}</span>
+          </button>
+          <button class="open-post-btn" aria-label="Open full post" title="Open full post" @click.stop="openCommentsInHost">
+            🗖
           </button>
         </div>
       </section>
@@ -1568,6 +1572,12 @@ onBeforeUnmount(() => {
           @touchend="onDrawerTouchEnd"
           @scroll="onCommentsScroll"
         >
+          <div class="comments-notice" role="note">
+            <span>Read-only comments. To post or rate, open the full post.</span>
+            <button class="open-post-inline-btn" @click="openCommentsInHost">
+              Open Post
+            </button>
+          </div>
           <div v-if="!currentVideoHash" class="no-comments">
             No post id
           </div>
@@ -1901,6 +1911,19 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
 }
+.open-post-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .comments-btn .comments-badge {
   position: absolute;
   top: -6px;
@@ -1996,6 +2019,27 @@ onBeforeUnmount(() => {
 .comments-body .center-msg {
   height: 100%;
   min-height: 120px;
+}
+.comments-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  margin: 2px 0 10px 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  font-size: 13px;
+  color: #ddd;
+}
+.open-post-inline-btn {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-weight: 600;
 }
 /* Dark scrollbar (WebKit/Blink) */
 .comments-body::-webkit-scrollbar {
