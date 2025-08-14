@@ -61,6 +61,12 @@ const avatarsByAddress = ref<Record<string, string>>({})
 // Names cache (by address)
 const namesByAddress = ref<Record<string, string>>({})
 
+// Reputation caches
+const reputationsByAddress = ref<Record<string, number>>({})
+const addressByHash = ref<Record<string, string>>({})
+const repLoadingByHash = ref<Record<string, boolean>>({})
+const repErrorByHash = ref<Record<string, string | null>>({})
+
 // Helper: resolve author address of a video item
 function getAuthorAddress(it: any): string | null {
   return (
@@ -136,17 +142,25 @@ function commentNameFor(c: any): string {
 
 // Author reputation helpers
 function getAuthorReputation(it: any): number | null {
+  // 1) Prefer inline JSON (legacy)
   const v = (
     it?.rawPost?.author_reputation
     ?? (it as any)?.author_reputation
     ?? null
   )
-  if (v == null)
-    return null
-  const n = typeof v === 'string' ? Number(v) : v
-  if (!Number.isFinite(n))
-    return null
-  return Math.round(n)
+  if (v != null) {
+    const n = typeof v === 'string' ? Number(v) : v
+    if (Number.isFinite(n))
+      return Math.round(n)
+  }
+
+  // 2) Fall back to RPC-cached reputation by address (if any)
+  const addr = getAuthorAddress(it)
+    || (it?.rawPost?.video_hash ? addressByHash.value[it.rawPost.video_hash] : null)
+  if (addr && reputationsByAddress.value[addr] != null)
+    return Math.round(reputationsByAddress.value[addr])
+
+  return null
 }
 
 function formatReputation(n: number): string {
@@ -162,6 +176,63 @@ function formatReputation(n: number): string {
   if (abs >= 1_000)
     return `${trim(n / 1_000)}k`
   return String(n)
+}
+
+// Fetch author address (if needed) and reputation for a given content hash
+async function fetchAuthorReputationByHash(hash: string) {
+  if (!hash)
+    return
+  if (repLoadingByHash.value[hash])
+    return
+  repLoadingByHash.value[hash] = true
+  repErrorByHash.value[hash] = null
+  try {
+    // Resolve address from cache or via getcontent
+    let addr = addressByHash.value[hash]
+    // Try to use current item if it matches this hash
+    if (!addr) {
+      const itLocal = items.value[currentIndex.value] as any
+      if (itLocal?.rawPost?.video_hash === hash) {
+        const a0 = getAuthorAddress(itLocal)
+        if (a0)
+          addr = a0
+      }
+    }
+    if (!addr) {
+      const res: any = await SdkService.rpc('getcontent', [[hash], ''])
+      if (Array.isArray(res) && res.length > 0) {
+        const rec = res[0]
+        const a = rec?.address || rec?.Address || rec?.adr
+        if (typeof a === 'string' && a) {
+          addr = a
+          addressByHash.value[hash] = a
+        }
+      }
+    }
+
+    if (!addr)
+      throw new Error('author address not found')
+
+    // Reputation cache hit?
+    if (reputationsByAddress.value[addr] != null)
+      return
+
+    // Fetch reputation
+    const st: any = await SdkService.rpc('getuserstate', [addr])
+    const rep = typeof st?.reputation === 'number'
+      ? st.reputation
+      : typeof st?.reputation === 'string'
+        ? Number(st.reputation)
+        : null
+    if (rep != null && Number.isFinite(rep))
+      reputationsByAddress.value[addr] = Math.round(rep)
+  }
+  catch (e: any) {
+    repErrorByHash.value[hash] = e?.message || String(e)
+  }
+  finally {
+    repLoadingByHash.value[hash] = false
+  }
 }
 
 // Batch fetch profiles and cache avatar URLs by address
@@ -216,6 +287,18 @@ function collectAddressesForCurrent(): Set<string> {
 const currentVideoHash = computed<string | null>(() => {
   const it = items.value[currentIndex.value] as any
   return it?.rawPost?.video_hash ?? null
+})
+
+// Fetch author reputation whenever the current video changes
+watch(currentVideoHash, (h) => {
+  if (h)
+    void fetchAuthorReputationByHash(h)
+})
+
+onMounted(() => {
+  const h = currentVideoHash.value
+  if (h)
+    void fetchAuthorReputationByHash(h)
 })
 
 const currentComments = computed<CommentState | undefined>(() => {
