@@ -90,6 +90,16 @@ async function ensureAuthorAddressByHash(hash: string): Promise<string | null> {
     return null
   if (addressByHash.value[hash])
     return addressByHash.value[hash]
+  // Prefer using local JSON item data first (rawPost.author_address) before falling back to RPC
+  try {
+    const it = items.value.find((x: any) => x?.rawPost?.video_hash === hash) as any
+    const localAddr = it ? getAuthorAddress(it) : null
+    if (typeof localAddr === 'string' && localAddr) {
+      addressByHash.value[hash] = localAddr
+      return localAddr
+    }
+  }
+  catch {}
   try {
     const res: any = await SdkService.rpc('getcontent', [[hash], ''])
     if (Array.isArray(res) && res.length > 0) {
