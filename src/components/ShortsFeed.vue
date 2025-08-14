@@ -21,6 +21,7 @@ interface VideoItem {
     caption?: string
     comments?: number
     video_hash?: string
+    author_reputation?: number | string
   }
 }
 
@@ -131,6 +132,36 @@ function commentNameFor(c: any): string {
   if (cached)
     return cached
   return shortAddress(addr) || 'Unknown'
+}
+
+// Author reputation helpers
+function getAuthorReputation(it: any): number | null {
+  const v = (
+    it?.rawPost?.author_reputation
+    ?? (it as any)?.author_reputation
+    ?? null
+  )
+  if (v == null)
+    return null
+  const n = typeof v === 'string' ? Number(v) : v
+  if (!Number.isFinite(n))
+    return null
+  return n
+}
+
+function formatReputation(n: number): string {
+  const abs = Math.abs(n)
+  const trim = (v: number) => {
+    const s = v.toFixed(1)
+    return s.endsWith('.0') ? s.slice(0, -2) : s
+  }
+  if (abs >= 1_000_000_000)
+    return `${trim(n / 1_000_000_000)}b`
+  if (abs >= 1_000_000)
+    return `${trim(n / 1_000_000)}m`
+  if (abs >= 1_000)
+    return `${trim(n / 1_000)}k`
+  return String(n)
 }
 
 // Batch fetch profiles and cache avatar URLs by address
@@ -1014,8 +1045,13 @@ onBeforeUnmount(() => {
         <div class="overlay">
           <div class="meta">
             <div class="author-row">
-              <div class="avatar author-avatar" :style="{ backgroundImage: authorAvatarFor(vi.item) ? `url('${authorAvatarFor(vi.item)}')` : '' }">
-                <span v-if="!authorAvatarFor(vi.item)" class="avatar-fallback">👤</span>
+              <div class="avatar-wrap">
+                <div class="avatar author-avatar" :style="{ backgroundImage: authorAvatarFor(vi.item) ? `url('${authorAvatarFor(vi.item)}')` : '' }">
+                  <span v-if="!authorAvatarFor(vi.item)" class="avatar-fallback">👤</span>
+                </div>
+                <div v-if="getAuthorReputation(vi.item) != null" class="reputation-badge">
+                  {{ formatReputation(getAuthorReputation(vi.item)!) }}
+                </div>
               </div>
               <div class="uploader">
                 {{ vi.item.uploader || 'Unknown' }}
@@ -1310,6 +1346,48 @@ onBeforeUnmount(() => {
 .meta {
   max-width: 80ch;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.author-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.avatar-wrap {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+}
+.avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background-size: cover;
+  background-position: center;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background-color: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.avatar-fallback {
+  font-size: 18px;
+}
+.reputation-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  padding: 2px 6px;
+  height: 18px;
+  line-height: 14px;
+  font-size: 11px;
+  border-radius: 999px;
+  background: #222;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
 }
 .uploader {
   font-weight: 600;
