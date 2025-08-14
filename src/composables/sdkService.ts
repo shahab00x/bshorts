@@ -219,6 +219,29 @@ export class SdkService {
   }
 
   /**
+   * Opens the Bastyon channel UI for the given address so the user can follow there.
+   * Useful as a fallback when signed actions are unavailable.
+   */
+  public static async openChannel(address: string): Promise<void> {
+    this.ensureInitialized()
+    try {
+      const sdkAny = this.sdk as any
+      const fn = sdkAny?.helpers?.channel
+      if (typeof fn !== 'function')
+        throw new Error('Host SDK does not support helpers.channel')
+
+      if (import.meta?.env?.VITE_SDK_DEBUG)
+        console.log('[SDK DEBUG] opening channel for address:', address)
+
+      await fn(address)
+    }
+    catch (error) {
+      console.error('Error opening channel UI:', error)
+      throw error
+    }
+  }
+
+  /**
    * Checks and requests permissions.
    * @param permissions The list of permissions to check and request if needed.
    * @returns Promise<void>

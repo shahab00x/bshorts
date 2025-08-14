@@ -294,17 +294,23 @@ async function followAuthor(it: any) {
     followErrorByAddress.value[resolvedAddr] = null
     followLoadingByAddress.value[resolvedAddr] = true
 
-    // Request required permissions (account) before signed action
-    await SdkService.checkAndRequestPermissions(['account', 'sign'])
-    // After permissions, verify that signed actions are available in this host
-    // if (!SdkService.supportsAction()) {
-    //   followErrorByAddress.value[resolvedAddr] = 'Follow requires Bastyon signed actions. Please update Bastyon or open this app inside the official Bastyon host.'
-    //   return
-    // }
-    // Use SDK signed action instead of raw RPC
-    console.log('Subscribing to', resolvedAddr)
-    await SdkService.action('subscribe', { address: resolvedAddr, private: false })
-    followedByAddress.value[resolvedAddr] = true
+    // Prefer signed subscribe if the host exposes action(); otherwise deep-link to channel UI
+    if (SdkService.supportsAction()) {
+      try {
+        await SdkService.checkAndRequestPermissions(['account', 'sign'])
+        console.log('Subscribing to', resolvedAddr)
+        await SdkService.action('subscribe', { address: resolvedAddr, private: false })
+        followedByAddress.value[resolvedAddr] = true
+        return
+      }
+      catch (err) {
+        console.warn('Signed subscribe failed, falling back to channel UI:', err)
+        // Fall through to deep-link UI
+      }
+    }
+
+    // Open the author's channel so the user can follow from native UI
+    await SdkService.openChannel(resolvedAddr)
   }
   catch (e: any) {
     let msg: string
