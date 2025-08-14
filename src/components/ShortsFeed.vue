@@ -545,7 +545,7 @@ async function toggleCommentsDrawer(ev?: Event) {
   ev?.stopPropagation?.()
   const willOpen = !showCommentsDrawer.value
   if (willOpen)
-    commentsHeightVh.value = 28
+    commentsHeightVh.value = 23
   if (willOpen)
     justOpened.value = true
   if (willOpen)
