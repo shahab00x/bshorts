@@ -10,7 +10,6 @@
     "externallink",
     "payment",
     "sign",
-    "account",
-    "authFetch"
+    "account"
   ]
 }
