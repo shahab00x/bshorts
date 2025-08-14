@@ -469,7 +469,7 @@ const commentsCount = computed(() => {
 const commentsHeaderEl = ref<HTMLElement | null>(null)
 const commentsBodyEl = ref<HTMLElement | null>(null)
 const commentsHeightVh = ref<number>(28)
-const growOnlyOpenPhase = ref<boolean>(false)
+const justOpened = ref<boolean>(false)
 
 function recomputeCommentsHeight() {
   // Skip measuring when the drawer is closed to avoid jarring first measurement
@@ -481,19 +481,23 @@ function recomputeCommentsHeight() {
   const headerH = commentsHeaderEl.value?.getBoundingClientRect().height ?? 0
   const bodyEl = commentsBodyEl.value
   let bodyContentH = bodyEl?.scrollHeight ?? bodyEl?.getBoundingClientRect().height ?? 0
-  // While loading, the placeholder may be styled with viewport height; clamp to avoid forcing max drawer height
-  if (currentComments.value?.loading)
+  // While loading or right after opening, clamp to avoid forcing max drawer height
+  if (currentComments.value?.loading || justOpened.value)
     bodyContentH = 0
-  const minBody = 140
+  const minBody = 96
   const contentPx = Math.max(bodyContentH, minBody)
   const maxPx = (2 / 3) * vhPx
   const desiredPx = Math.min(headerH + contentPx, maxPx)
   const targetVh = (desiredPx / vhPx) * 100
   const capped = Math.min(targetVh, 66.6667)
-  // During open phase, only allow the drawer to grow, not shrink
-  if (growOnlyOpenPhase.value && capped < commentsHeightVh.value)
-    return
-  commentsHeightVh.value = capped
+  // During loading, only allow the drawer to expand (avoid initial growth from placeholder measurements)
+  const next = currentComments.value?.loading
+    ? Math.min(capped, commentsHeightVh.value)
+    : capped
+  commentsHeightVh.value = next
+  // After the first recompute post-open, allow normal behavior
+  if (justOpened.value)
+    justOpened.value = false
 }
 
 // Observe changes
@@ -512,16 +516,15 @@ watch(commentsBodyEl, (el) => {
 })
 watch([() => currentComments.value?.items?.length, showCommentsDrawer], async () => {
   if (showCommentsDrawer.value)
-    commentsHeightVh.value = 36
+    commentsHeightVh.value = 28
 
   await nextTick()
   recomputeCommentsHeight()
 })
 // While loading, allow only growth to avoid initial shrink flicker; once loaded, allow shrinking
-watch(() => currentComments.value?.loading, async (loading) => {
+watch(() => currentComments.value?.loading, async () => {
   if (!showCommentsDrawer.value)
     return
-  growOnlyOpenPhase.value = !!loading
   await nextTick()
   recomputeCommentsHeight()
 })
@@ -538,12 +541,15 @@ onBeforeUnmount(() => {
     commentsBodyRO.disconnect()
 })
 
-function toggleCommentsDrawer(ev?: Event) {
+async function toggleCommentsDrawer(ev?: Event) {
   ev?.stopPropagation?.()
   const willOpen = !showCommentsDrawer.value
   if (willOpen)
-    commentsHeightVh.value = 36
-
+    commentsHeightVh.value = 28
+  if (willOpen)
+    justOpened.value = true
+  if (willOpen)
+    await nextTick()
   showCommentsDrawer.value = !showCommentsDrawer.value
   if (showCommentsDrawer.value)
     showDescriptionDrawer.value = false
@@ -1126,9 +1132,9 @@ onBeforeUnmount(() => {
     <!-- Comments Drawer (right side) -->
     <div
       class="drawer-base comments-drawer"
-      :class="{ open: showCommentsDrawer, dragging: draggingWhich === 'comments' }"
+      :class="{ 'open': showCommentsDrawer, 'dragging': draggingWhich === 'comments', 'no-anim': justOpened }"
       :style="[
-        { '--comments-height': `${commentsHeightVh}vh` },
+        { height: `${commentsHeightVh}vh` },
         draggingWhich === 'comments' ? { transform: `translateY(${commentsDragOffset}px)` } : null,
       ]"
       @click.self="closeAnyDrawer"
@@ -1563,9 +1569,12 @@ onBeforeUnmount(() => {
 
 /* Comments bottom sheet: up to 2/3 viewport height, dynamic */
 .comments-drawer {
-  height: min(var(--comments-height, 36vh), 66.6667vh);
+  max-height: 66.6667vh;
   transition: height 200ms ease-in-out;
   will-change: height;
+}
+.comments-drawer.no-anim {
+  transition: none;
 }
 .no-comments {
   opacity: 0.8;
