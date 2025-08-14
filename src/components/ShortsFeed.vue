@@ -67,6 +67,117 @@ const addressByHash = ref<Record<string, string>>({})
 const repLoadingByHash = ref<Record<string, boolean>>({})
 const repErrorByHash = ref<Record<string, string | null>>({})
 
+// Avatars readiness (per post hash)
+const avatarsReadyByHash = ref<Record<string, boolean>>({})
+const avatarsPreparingByHash = ref<Record<string, boolean>>({})
+
+// Lazy rendering state: visible count per hash
+const visibleCountByHash = ref<Record<string, number>>({})
+function getVisibleCount(hash: string): number {
+  if (!visibleCountByHash.value[hash])
+    visibleCountByHash.value[hash] = 10
+  return visibleCountByHash.value[hash]
+}
+
+// Ensure we know the author address for a given hash (without fetching reputation)
+async function ensureAuthorAddressByHash(hash: string): Promise<string | null> {
+  if (!hash)
+    return null
+  if (addressByHash.value[hash])
+    return addressByHash.value[hash]
+  try {
+    const res: any = await SdkService.rpc('getcontent', [[hash], ''])
+    if (Array.isArray(res) && res.length > 0) {
+      const rec = res[0]
+      const a = rec?.address || rec?.Address || rec?.adr
+      if (typeof a === 'string' && a) {
+        addressByHash.value[hash] = a
+        return a
+      }
+    }
+  }
+  catch {}
+  return null
+}
+
+// Preload an image URL and resolve when loaded (or after a short timeout)
+function preloadImage(url: string, timeoutMs = 5000): Promise<void> {
+  return new Promise((resolve) => {
+    if (!url) {
+      resolve()
+      return
+    }
+    const img = new Image()
+    let done = false
+    const finish = () => {
+      if (!done) {
+        done = true
+        resolve()
+      }
+    }
+    const to = setTimeout(finish, timeoutMs)
+    img.onload = () => {
+      clearTimeout(to)
+      finish()
+    }
+    img.onerror = () => {
+      clearTimeout(to)
+      finish()
+    }
+    img.src = url
+  })
+}
+
+// Build addresses set for a given hash (author + first visible commenters)
+function collectAddressesForHash(hash: string): Set<string> {
+  const addrs = new Set<string>()
+  // Author by item or cached address
+  const it = items.value.find((x: any) => x?.rawPost?.video_hash === hash) as any
+  const a0 = it ? getAuthorAddress(it) : null
+  if (a0)
+    addrs.add(a0)
+  const cachedAddr = addressByHash.value[hash]
+  if (cachedAddr)
+    addrs.add(cachedAddr)
+  // Visible commenters
+  const st = commentsByHash.value[hash]
+  const vis = Math.min(getVisibleCount(hash), st?.items?.length || 0)
+  for (let i = 0; i < vis; i++) {
+    const c = st?.items?.[i]
+    const a = resolveCommentAddress(c)
+    if (a)
+      addrs.add(a)
+  }
+  return addrs
+}
+
+// Prepare and wait until avatars for current visible comments (and author) are loaded
+async function ensureAvatarsReadyForHash(hash: string) {
+  if (!hash)
+    return
+  if (avatarsReadyByHash.value[hash] || avatarsPreparingByHash.value[hash])
+    return
+  avatarsPreparingByHash.value[hash] = true
+  try {
+    const addrs = collectAddressesForHash(hash)
+    // Ensure profile URLs are fetched
+    await fetchProfiles(addrs)
+    await nextTick()
+    // Gather URLs and preload images
+    const urls: string[] = []
+    for (const a of addrs) {
+      const u = avatarsByAddress.value[a]
+      if (u)
+        urls.push(u)
+    }
+    await Promise.all(urls.map(u => preloadImage(u)))
+    avatarsReadyByHash.value[hash] = true
+  }
+  finally {
+    avatarsPreparingByHash.value[hash] = false
+  }
+}
+
 // Helper: resolve author address of a video item
 function getAuthorAddress(it: any): string | null {
   return (
@@ -311,14 +422,12 @@ const currentComments = computed<CommentState | undefined>(() => {
   return h ? commentsByHash.value[h] : undefined
 })
 
-// Lazy rendering state: visible count per hash
-const visibleCountByHash = ref<Record<string, number>>({})
+const avatarsReadyForCurrent = computed<boolean>(() => {
+  const h = currentVideoHash.value
+  return !!(h && avatarsReadyByHash.value[h])
+})
 
-function getVisibleCount(hash: string): number {
-  if (!visibleCountByHash.value[hash])
-    visibleCountByHash.value[hash] = 10
-  return visibleCountByHash.value[hash]
-}
+// (moved up) visibleCountByHash and getVisibleCount declared earlier
 
 const currentVisibleComments = computed<any[]>(() => {
   const h = currentVideoHash.value
@@ -341,6 +450,8 @@ function onCommentsScroll(ev: Event) {
       const st = commentsByHash.value[h]
       if (st?.items?.length && getVisibleCount(h) < st.items.length)
         visibleCountByHash.value[h] = Math.min(st.items.length, getVisibleCount(h) + 10)
+      // As more comments become visible, prepare their avatars in the background
+      void ensureAvatarsReadyForHash(h)
     }
   }
 }
@@ -444,6 +555,8 @@ async function fetchCommentsFor(hash: string, { force = false }: { force?: boole
     state.fetchedAt = Date.now()
     if (!visibleCountByHash.value[hash])
       visibleCountByHash.value[hash] = Math.min(10, state.items.length || 10)
+    // Start preparing avatars for current visible set
+    void ensureAvatarsReadyForHash(hash)
   }
   catch (e: any) {
     state.error = e?.message || String(e)
@@ -475,6 +588,8 @@ watch(showCommentsDrawer, (open) => {
     const h = currentVideoHash.value
     if (h && !visibleCountByHash.value[h])
       visibleCountByHash.value[h] = 10
+    if (h)
+      void ensureAvatarsReadyForHash(h)
   }
 })
 watch(currentIndex, () => {
@@ -492,8 +607,27 @@ watch(items, (arr) => {
   if (Array.isArray(arr) && arr.length)
     void fetchProfiles(collectAddressesForCurrent())
 })
-watch(currentIndex, () => {
+watch(currentIndex, async () => {
+  // Ensure current visible avatars
   void fetchProfiles(collectAddressesForCurrent())
+  const h = currentVideoHash.value
+  if (h)
+    void ensureAvatarsReadyForHash(h)
+  // Preload next post's author avatar
+  const ni = currentIndex.value + 1
+  const next = items.value[ni] as any
+  if (next) {
+    const nHash = next?.rawPost?.video_hash ?? null
+    let addr = getAuthorAddress(next)
+    if (!addr && nHash)
+      addr = addressByHash.value[nHash] || await ensureAuthorAddressByHash(nHash)
+    if (addr) {
+      await fetchProfiles(new Set([addr]))
+      const url = avatarsByAddress.value[addr]
+      if (url)
+        void preloadImage(url)
+    }
+  }
 })
 watch(showCommentsDrawer, (open) => {
   if (open)
@@ -501,6 +635,9 @@ watch(showCommentsDrawer, (open) => {
 })
 watch(() => currentComments.value?.items, () => {
   void fetchProfiles(collectAddressesForCurrent())
+  const h = currentVideoHash.value
+  if (h && showCommentsDrawer.value)
+    void ensureAvatarsReadyForHash(h)
 })
 
 // Drawer drag-to-close state
@@ -1295,6 +1432,9 @@ onBeforeUnmount(() => {
                 Retry
               </button>
             </div>
+          </div>
+          <div v-else-if="!avatarsReadyForCurrent" class="center-msg">
+            <LoadingSpinner :size="36" aria-label="Preparing avatars" />
           </div>
           <div v-else-if="(currentComments?.items?.length || 0) === 0" class="no-comments">
             No comments yet
