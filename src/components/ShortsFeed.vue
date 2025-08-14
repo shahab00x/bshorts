@@ -57,6 +57,8 @@ const commentsByHash = ref<Record<string, CommentState>>({})
 
 // Avatars cache (by address)
 const avatarsByAddress = ref<Record<string, string>>({})
+// Names cache (by address)
+const namesByAddress = ref<Record<string, string>>({})
 
 // Helper: resolve author address of a video item
 function getAuthorAddress(it: any): string | null {
@@ -110,6 +112,27 @@ function commentAvatarFor(c: any): string {
   return getAddressAvatar(resolveCommentAddress(c))
 }
 
+function shortAddress(addr?: string | null): string {
+  if (!addr)
+    return ''
+  if (addr.length <= 12)
+    return addr
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`
+}
+
+function commentNameFor(c: any): string {
+  // prefer explicit fields on the comment object
+  const direct = c?.name || c?.user?.name || c?.author?.name || c?.account?.name
+  if (typeof direct === 'string' && direct.trim())
+    return direct.trim()
+  // fall back to profile cache
+  const addr = resolveCommentAddress(c)
+  const cached = addr ? namesByAddress.value[addr] : ''
+  if (cached)
+    return cached
+  return shortAddress(addr) || 'Unknown'
+}
+
 // Batch fetch profiles and cache avatar URLs by address
 async function fetchProfiles(addresses: Set<string>) {
   const todo = Array.from(addresses).filter(a => a && !avatarsByAddress.value[a])
@@ -128,6 +151,9 @@ async function fetchProfiles(addresses: Set<string>) {
           const url = p?.image || p?.i || p?.avatar_url || ''
           if (addr && url && !avatarsByAddress.value[addr])
             avatarsByAddress.value[addr] = url
+          const pname = (p as any)?.name || (p as any)?.n || (p as any)?.nickname || (p as any)?.nick || (p as any)?.profile?.name
+          if (addr && typeof pname === 'string' && pname.trim() && !namesByAddress.value[addr])
+            namesByAddress.value[addr] = String(pname).trim()
         }
       }
     }
@@ -1053,6 +1079,7 @@ onBeforeUnmount(() => {
         </div>
         <div
           class="drawer-body comments-body"
+          :class="{ 'no-scroll': currentComments?.loading }"
           @touchstart="onDrawerBodyTouchStart('comments', $event)"
           @touchmove="onDrawerTouchMove($event)"
           @touchend="onDrawerTouchEnd"
@@ -1081,7 +1108,12 @@ onBeforeUnmount(() => {
                 <div class="avatar comment-avatar" :style="{ backgroundImage: commentAvatarFor(c) ? `url('${commentAvatarFor(c)}')` : '' }">
                   <span v-if="!commentAvatarFor(c)" class="avatar-fallback">👤</span>
                 </div>
-                <div class="comment-text" @click="onDescHtmlClick" v-html="linkify(getCommentText(c))" />
+                <div class="comment-main">
+                  <div class="comment-author">
+                    {{ commentNameFor(c) }}
+                  </div>
+                  <div class="comment-text" @click="onDescHtmlClick" v-html="linkify(getCommentText(c))" />
+                </div>
               </div>
             </li>
           </ul>
@@ -1408,6 +1440,10 @@ onBeforeUnmount(() => {
   scrollbar-color: #4a4a4a rgba(0, 0, 0, 0.35);
   scrollbar-width: thin;
 }
+.comments-body.no-scroll {
+  /* While loading, avoid showing any scrollbar */
+  overflow: hidden;
+}
 /* Dark scrollbar (WebKit/Blink) */
 .comments-body::-webkit-scrollbar {
   width: 10px;
@@ -1481,6 +1517,16 @@ onBeforeUnmount(() => {
   grid-template-columns: auto 1fr;
   gap: 10px;
   align-items: start;
+}
+.comment-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.comment-author {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.95;
 }
 .comment-text {
   line-height: 1.35;
