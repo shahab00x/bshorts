@@ -242,6 +242,28 @@ export class SdkService {
   }
 
   /**
+   * Opens a post by txid in the host UI (which includes the comments view).
+   */
+  public static async openPost(txid: string): Promise<void> {
+    this.ensureInitialized()
+    try {
+      const sdkAny = this.sdk as any
+      const fn = sdkAny?.open?.post
+      if (typeof fn !== 'function')
+        throw new Error('Host SDK does not support open.post')
+
+      if (import.meta?.env?.VITE_SDK_DEBUG)
+        console.log('[SDK DEBUG] opening post:', txid)
+
+      await fn(txid)
+    }
+    catch (error) {
+      console.error('Error opening post in host UI:', error)
+      throw error
+    }
+  }
+
+  /**
    * Checks and requests permissions.
    * @param permissions The list of permissions to check and request if needed.
    * @returns Promise<void>

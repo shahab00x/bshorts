@@ -338,6 +338,23 @@ async function followAuthor(it: any) {
   }
 }
 
+// Open the author's channel/profile UI (used on avatar/name click)
+async function openAuthorChannel(it: any) {
+  try {
+    let addr = getAuthorAddress(it)
+    if (!addr) {
+      const hash = it?.rawPost?.video_hash
+      addr = hash ? await ensureAuthorAddressByHash(hash) : null
+    }
+    if (!addr)
+      return
+    await SdkService.openChannel(addr)
+  }
+  catch (e) {
+    console.error('Open channel failed:', e)
+  }
+}
+
 function shortAddress(addr?: string | null): string {
   if (!addr)
     return ''
@@ -918,6 +935,21 @@ async function toggleCommentsDrawer(ev?: Event) {
   if (showCommentsDrawer.value)
     showDescriptionDrawer.value = false
 }
+async function openCommentsInHost(ev?: Event) {
+  try {
+    ev?.stopPropagation?.()
+    const txid = currentVideoHash.value
+    if (!txid) {
+      console.warn('No current video hash to open comments for.')
+      return
+    }
+    await SdkService.openPost(txid)
+  }
+  catch (e) {
+    console.warn('Host open.post unavailable; falling back to in-app comments drawer', e)
+    await toggleCommentsDrawer(ev)
+  }
+}
 function openDescriptionDrawer(ev?: Event) {
   ev?.stopPropagation?.()
   showDescriptionDrawer.value = true
@@ -1378,7 +1410,7 @@ onBeforeUnmount(() => {
         <div class="overlay">
           <div class="meta">
             <div class="author-row">
-              <div class="avatar-wrap">
+              <div class="avatar-wrap" title="Open profile" @click.stop="openAuthorChannel(vi.item)">
                 <div class="avatar author-avatar" :style="{ backgroundImage: authorAvatarFor(vi.item) ? `url('${authorAvatarFor(vi.item)}')` : '' }">
                   <span v-if="!authorAvatarFor(vi.item)" class="avatar-fallback">👤</span>
                 </div>
@@ -1386,7 +1418,7 @@ onBeforeUnmount(() => {
                   {{ formatReputation(getAuthorReputation(vi.item)!) }}
                 </div>
               </div>
-              <div class="uploader">
+              <div class="uploader" title="Open profile" @click.stop="openAuthorChannel(vi.item)">
                 {{ vi.item.uploader || 'Unknown' }}
               </div>
               <button
@@ -1455,7 +1487,7 @@ onBeforeUnmount(() => {
         </div>
         <!-- Right-side controls -->
         <div v-if="vi.idx === currentIndex" class="right-controls">
-          <button class="comments-btn" aria-label="Open comments" @click.stop="toggleCommentsDrawer">
+          <button class="comments-btn" aria-label="Open comments" @click.stop="openCommentsInHost">
             💬
             <span v-if="commentsCount" class="comments-badge">{{ commentsCount }}</span>
           </button>
@@ -1703,6 +1735,7 @@ onBeforeUnmount(() => {
   width: 40px;
   height: 40px;
   flex: 0 0 40px;
+  cursor: pointer;
 }
 .avatar {
   width: 100%;
@@ -1737,6 +1770,7 @@ onBeforeUnmount(() => {
 .uploader {
   font-weight: 600;
   margin-bottom: 4px;
+  cursor: pointer;
 }
 .follow-btn {
   padding: 4px 10px;
