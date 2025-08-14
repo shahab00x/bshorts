@@ -15,7 +15,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "up": "taze major -I",
-    "postinstall": "npx simple-git-hooks"
+    "postinstall": "npx simple-git-hooks",
+    "dev:debug": "cross-env VITE_SDK_DEBUG=true vite"
   },
   "dependencies": {
     "@vueuse/core": "^10.9.0",
