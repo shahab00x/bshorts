@@ -8,6 +8,8 @@
   "scope": "apptest.bastyon.ir",
   "permissions": [
     "sign",
-    "externallink"
+    "externallink",
+    "account",
+    "payment"
   ]
 }
