@@ -297,10 +297,10 @@ async function followAuthor(it: any) {
     // Request required permissions (account) before signed action
     await SdkService.checkAndRequestPermissions(['account', 'sign'])
     // After permissions, verify that signed actions are available in this host
-    if (!SdkService.supportsAction()) {
-      followErrorByAddress.value[resolvedAddr] = 'Follow requires Bastyon signed actions. Please update Bastyon or open this app inside the official Bastyon host.'
-      return
-    }
+    // if (!SdkService.supportsAction()) {
+    //   followErrorByAddress.value[resolvedAddr] = 'Follow requires Bastyon signed actions. Please update Bastyon or open this app inside the official Bastyon host.'
+    //   return
+    // }
     // Use SDK signed action instead of raw RPC
     console.log('Subscribing to', resolvedAddr)
     await SdkService.action('subscribe', { address: resolvedAddr, private: false })
