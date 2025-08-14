@@ -466,14 +466,10 @@ const commentsCount = computed(() => {
 const commentsHeightPct = computed(() => {
   const n = commentsCount.value
   // Grow with comment volume, cap at ~66.67vh
-  if (n >= 100)
+  if (n >= 7)
     return 66.6667
-  if (n >= 50)
-    return 60
-  if (n >= 20)
-    return 56
   if (n >= 5)
-    return 46
+    return 50
   return 36 // minimum feel for empty/few comments
 })
 
