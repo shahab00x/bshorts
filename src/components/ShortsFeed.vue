@@ -468,9 +468,8 @@ const commentsCount = computed(() => {
 // Dynamic comments drawer height: measure content and cap at 2/3 viewport
 const commentsHeaderEl = ref<HTMLElement | null>(null)
 const commentsBodyEl = ref<HTMLElement | null>(null)
-const commentsHeightVh = ref<number>(36)
+const commentsHeightVh = ref<number>(28)
 const growOnlyOpenPhase = ref<boolean>(false)
-let growOnlyTimer: number | null = null
 
 function recomputeCommentsHeight() {
   // Skip measuring when the drawer is closed to avoid jarring first measurement
@@ -481,14 +480,16 @@ function recomputeCommentsHeight() {
     return
   const headerH = commentsHeaderEl.value?.getBoundingClientRect().height ?? 0
   const bodyEl = commentsBodyEl.value
-  const bodyContentH = bodyEl?.scrollHeight ?? bodyEl?.getBoundingClientRect().height ?? 0
-  // Ensure a reasonable minimum body height so the drawer is usable even with spinner/empty state
+  let bodyContentH = bodyEl?.scrollHeight ?? bodyEl?.getBoundingClientRect().height ?? 0
+  // While loading, the placeholder may be styled with viewport height; clamp to avoid forcing max drawer height
+  if (currentComments.value?.loading)
+    bodyContentH = 0
   const minBody = 140
   const contentPx = Math.max(bodyContentH, minBody)
   const maxPx = (2 / 3) * vhPx
   const desiredPx = Math.min(headerH + contentPx, maxPx)
   const targetVh = (desiredPx / vhPx) * 100
-  const capped = Math.min(Math.max(targetVh, 36), 66.6667)
+  const capped = Math.min(targetVh, 66.6667)
   // During open phase, only allow the drawer to grow, not shrink
   if (growOnlyOpenPhase.value && capped < commentsHeightVh.value)
     return
@@ -510,16 +511,17 @@ watch(commentsBodyEl, (el) => {
   }
 })
 watch([() => currentComments.value?.items?.length, showCommentsDrawer], async () => {
-  if (showCommentsDrawer.value) {
+  if (showCommentsDrawer.value)
     commentsHeightVh.value = 36
-    growOnlyOpenPhase.value = true
-    if (growOnlyTimer)
-      clearTimeout(growOnlyTimer)
-    growOnlyTimer = window.setTimeout(() => {
-      growOnlyOpenPhase.value = false
-      growOnlyTimer = null
-    }, 600)
-  }
+
+  await nextTick()
+  recomputeCommentsHeight()
+})
+// While loading, allow only growth to avoid initial shrink flicker; once loaded, allow shrinking
+watch(() => currentComments.value?.loading, async (loading) => {
+  if (!showCommentsDrawer.value)
+    return
+  growOnlyOpenPhase.value = !!loading
   await nextTick()
   recomputeCommentsHeight()
 })
@@ -534,23 +536,14 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', recomputeCommentsHeight)
   if (commentsBodyRO)
     commentsBodyRO.disconnect()
-  if (growOnlyTimer)
-    clearTimeout(growOnlyTimer)
 })
 
 function toggleCommentsDrawer(ev?: Event) {
   ev?.stopPropagation?.()
   const willOpen = !showCommentsDrawer.value
-  if (willOpen) {
+  if (willOpen)
     commentsHeightVh.value = 36
-    growOnlyOpenPhase.value = true
-    if (growOnlyTimer)
-      clearTimeout(growOnlyTimer)
-    growOnlyTimer = window.setTimeout(() => {
-      growOnlyOpenPhase.value = false
-      growOnlyTimer = null
-    }, 600)
-  }
+
   showCommentsDrawer.value = !showCommentsDrawer.value
   if (showCommentsDrawer.value)
     showDescriptionDrawer.value = false
@@ -1517,6 +1510,11 @@ onBeforeUnmount(() => {
 .comments-body.no-scroll {
   /* While loading, avoid showing any scrollbar */
   overflow: hidden;
+}
+/* Ensure loading/empty center message fits the body height, not the whole viewport */
+.comments-body .center-msg {
+  height: 100%;
+  min-height: 120px;
 }
 /* Dark scrollbar (WebKit/Blink) */
 .comments-body::-webkit-scrollbar {
