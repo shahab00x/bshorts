@@ -48,6 +48,25 @@ export class SdkService {
         await sdkUnknown.serviceWorker.register()
 
       console.log('Bastyon SDK successfully initialized (compatible mode).')
+
+      // Optional debug: inventory exposed SDK methods/properties
+      // Enable by setting VITE_SDK_DEBUG=true
+      if (import.meta?.env?.VITE_SDK_DEBUG) {
+        try {
+          const proto = Object.getPrototypeOf(this.sdk)
+          const protoKeys = Object.getOwnPropertyNames(proto)
+          const ownKeys = Object.keys(this.sdk as any)
+          const hasAction = typeof (this.sdk as any)?.action === 'function'
+          console.log('[SDK DEBUG] proto keys:', protoKeys)
+          console.log('[SDK DEBUG] own keys:', ownKeys)
+          console.log('[SDK DEBUG] has action():', hasAction)
+          console.log('[SDK DEBUG] permissions API:', typeof (this.sdk as any)?.permissions)
+          console.log('[SDK DEBUG] get API:', typeof (this.sdk as any)?.get)
+        }
+        catch (err) {
+          console.warn('[SDK DEBUG] failed to introspect SDK:', err)
+        }
+      }
     }
     catch (error) {
       console.error('Error initializing Bastyon SDK:', error)
@@ -104,6 +123,15 @@ export class SdkService {
       console.error('Error during RPC call:', error)
       throw error
     }
+  }
+
+  /**
+   * Returns true if the host SDK exposes the action() method (i.e., running inside Bastyon host).
+   */
+  public static supportsAction(): boolean {
+    this.ensureInitialized()
+    const sdkUnknown: unknown = this.sdk
+    return typeof (sdkUnknown as any)?.action === 'function'
   }
 
   /**
