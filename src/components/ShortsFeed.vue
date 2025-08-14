@@ -458,15 +458,64 @@ const descText = computed(() => getDescription(currentItem.value))
 const descHtml = computed(() => linkify(descText.value || ''))
 const descTags = computed(() => parseHashtags(currentItem.value?.rawPost?.hashtags ?? (currentItem.value as any)?.hashtags))
 
+// Comments count for badge (not tied to height)
 const commentsCount = computed(() => {
   const c = (currentItem.value as any)?.comments ?? (currentItem.value as any)?.rawPost?.comments
   const n = Number(c)
   return Number.isFinite(n) && n >= 0 ? n : 0
 })
-const commentsHeightPct = computed(() => {
-  // const n = commentsCount.value
-  // Grow with comment volume, cap at ~66.67vh
-  return 33 // minimum feel for empty/few comments
+
+// Dynamic comments drawer height: measure content and cap at 2/3 viewport
+const commentsHeaderEl = ref<HTMLElement | null>(null)
+const commentsBodyEl = ref<HTMLElement | null>(null)
+const commentsHeightVh = ref<number>(40)
+
+function recomputeCommentsHeight() {
+  const vhPx = window.innerHeight || document.documentElement.clientHeight || 0
+  if (!vhPx)
+    return
+  const headerH = commentsHeaderEl.value?.getBoundingClientRect().height ?? 0
+  const bodyEl = commentsBodyEl.value
+  const bodyContentH = bodyEl?.scrollHeight ?? bodyEl?.getBoundingClientRect().height ?? 0
+  // Ensure a reasonable minimum body height so the drawer is usable even with spinner/empty state
+  const minBody = 140
+  const contentPx = Math.max(bodyContentH, minBody)
+  const maxPx = (2 / 3) * vhPx
+  const desiredPx = Math.min(headerH + contentPx, maxPx)
+  const targetVh = (desiredPx / vhPx) * 100
+  commentsHeightVh.value = Math.min(targetVh, 66.6667)
+}
+
+// Observe changes
+let commentsBodyRO: ResizeObserver | null = null
+watch(commentsBodyEl, (el) => {
+  if (commentsBodyRO) {
+    commentsBodyRO.disconnect()
+    commentsBodyRO = null
+  }
+  if (el && typeof ResizeObserver !== 'undefined') {
+    commentsBodyRO = new ResizeObserver(() => {
+      recomputeCommentsHeight()
+    })
+    commentsBodyRO.observe(el)
+  }
+})
+watch([() => currentComments.value?.items?.length, showCommentsDrawer], async () => {
+  await nextTick()
+  recomputeCommentsHeight()
+})
+watch(currentIndex, async () => {
+  await nextTick()
+  recomputeCommentsHeight()
+})
+onMounted(() => {
+  window.addEventListener('resize', recomputeCommentsHeight)
+  recomputeCommentsHeight()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', recomputeCommentsHeight)
+  if (commentsBodyRO)
+    commentsBodyRO.disconnect()
 })
 
 function toggleCommentsDrawer(ev?: Event) {
@@ -1055,13 +1104,14 @@ onBeforeUnmount(() => {
       class="drawer-base comments-drawer"
       :class="{ open: showCommentsDrawer, dragging: draggingWhich === 'comments' }"
       :style="[
-        { '--comments-height': `${commentsHeightPct}vh` },
+        { '--comments-height': `${commentsHeightVh}vh` },
         draggingWhich === 'comments' ? { transform: `translateY(${commentsDragOffset}px)` } : null,
       ]"
       @click.self="closeAnyDrawer"
     >
       <div class="drawer-content" @click.stop>
         <div
+          ref="commentsHeaderEl"
           class="drawer-header"
           @touchstart="onDrawerTouchStart('comments', $event, true)"
           @touchmove="onDrawerTouchMove($event)"
@@ -1070,6 +1120,7 @@ onBeforeUnmount(() => {
           <h3>Comments</h3>
         </div>
         <div
+          ref="commentsBodyEl"
           class="drawer-body comments-body"
           :class="{ 'no-scroll': currentComments?.loading }"
           @touchstart="onDrawerBodyTouchStart('comments', $event)"
