@@ -464,13 +464,9 @@ const commentsCount = computed(() => {
   return Number.isFinite(n) && n >= 0 ? n : 0
 })
 const commentsHeightPct = computed(() => {
-  const n = commentsCount.value
+  // const n = commentsCount.value
   // Grow with comment volume, cap at ~66.67vh
-  if (n >= 7)
-    return 66.6667
-  if (n >= 5)
-    return 50
-  return 36 // minimum feel for empty/few comments
+  return 33 // minimum feel for empty/few comments
 })
 
 function toggleCommentsDrawer(ev?: Event) {
