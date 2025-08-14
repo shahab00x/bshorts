@@ -67,6 +67,11 @@ const addressByHash = ref<Record<string, string>>({})
 const repLoadingByHash = ref<Record<string, boolean>>({})
 const repErrorByHash = ref<Record<string, string | null>>({})
 
+// Follow state (by address)
+const followedByAddress = ref<Record<string, boolean>>({})
+const followLoadingByAddress = ref<Record<string, boolean>>({})
+const followErrorByAddress = ref<Record<string, string | null>>({})
+
 // Avatars readiness (per post hash)
 const avatarsReadyByHash = ref<Record<string, boolean>>({})
 const avatarsPreparingByHash = ref<Record<string, boolean>>({})
@@ -228,6 +233,60 @@ function authorAvatarFor(it: any): string {
 }
 function commentAvatarFor(c: any): string {
   return getAddressAvatar(resolveCommentAddress(c))
+}
+
+function isAddressFollowed(addr?: string | null): boolean {
+  return !!(addr && followedByAddress.value[addr])
+}
+
+function isAuthorFollowed(it: any): boolean {
+  const addr = getAuthorAddress(it)
+  return isAddressFollowed(addr)
+}
+
+function isFollowLoading(it: any): boolean {
+  const addr = getAuthorAddress(it)
+  return !!(addr && followLoadingByAddress.value[addr])
+}
+
+function followBtnLabel(it: any): string {
+  if (isFollowLoading(it))
+    return 'Following…'
+  return isAuthorFollowed(it) ? 'Following' : 'Follow'
+}
+
+async function followAuthor(it: any) {
+  let resolvedAddr: string | null = null
+  try {
+    resolvedAddr = getAuthorAddress(it)
+    // Fallback: resolve from hash when needed
+    if (!resolvedAddr) {
+      const hash = it?.rawPost?.video_hash
+      resolvedAddr = await ensureAuthorAddressByHash(hash)
+    }
+    if (!resolvedAddr)
+      throw new Error('author address not found')
+
+    if (followLoadingByAddress.value[resolvedAddr])
+      return
+
+    followErrorByAddress.value[resolvedAddr] = null
+    followLoadingByAddress.value[resolvedAddr] = true
+
+    // NOTE: RPC method name inferred from Bastyon API; adjust if backend differs.
+    await SdkService.rpc('subscribe', [resolvedAddr])
+    followedByAddress.value[resolvedAddr] = true
+  }
+  catch (e: any) {
+    const msg = e?.message || String(e)
+    if (resolvedAddr)
+      followErrorByAddress.value[resolvedAddr] = msg
+    console.error('Follow failed:', msg)
+  }
+  finally {
+    if (resolvedAddr)
+      followLoadingByAddress.value[resolvedAddr] = false
+  }
 }
 
 function shortAddress(addr?: string | null): string {
@@ -1281,6 +1340,15 @@ onBeforeUnmount(() => {
               <div class="uploader">
                 {{ vi.item.uploader || 'Unknown' }}
               </div>
+              <button
+                class="follow-btn"
+                :class="{ following: isAuthorFollowed(vi.item), loading: isFollowLoading(vi.item) }"
+                :disabled="isFollowLoading(vi.item) || isAuthorFollowed(vi.item)"
+                aria-label="Follow author"
+                @click.stop="followAuthor(vi.item)"
+              >
+                {{ followBtnLabel(vi.item) }}
+              </button>
             </div>
             <div class="desc" title="View description" @click.stop="openDescriptionDrawer">
               {{ vi.item.description }}
@@ -1620,6 +1688,24 @@ onBeforeUnmount(() => {
 .uploader {
   font-weight: 600;
   margin-bottom: 4px;
+}
+.follow-btn {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+.follow-btn.loading,
+.follow-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+.follow-btn.following {
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.25);
 }
 .desc {
   opacity: 0.9;
