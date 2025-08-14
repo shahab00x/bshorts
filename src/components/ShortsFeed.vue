@@ -146,7 +146,7 @@ function getAuthorReputation(it: any): number | null {
   const n = typeof v === 'string' ? Number(v) : v
   if (!Number.isFinite(n))
     return null
-  return n
+  return Math.round(n)
 }
 
 function formatReputation(n: number): string {
