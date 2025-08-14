@@ -469,6 +469,8 @@ const commentsCount = computed(() => {
 const commentsHeaderEl = ref<HTMLElement | null>(null)
 const commentsBodyEl = ref<HTMLElement | null>(null)
 const commentsHeightVh = ref<number>(36)
+const growOnlyOpenPhase = ref<boolean>(false)
+let growOnlyTimer: number | null = null
 
 function recomputeCommentsHeight() {
   // Skip measuring when the drawer is closed to avoid jarring first measurement
@@ -486,7 +488,11 @@ function recomputeCommentsHeight() {
   const maxPx = (2 / 3) * vhPx
   const desiredPx = Math.min(headerH + contentPx, maxPx)
   const targetVh = (desiredPx / vhPx) * 100
-  commentsHeightVh.value = Math.min(targetVh, 66.6667)
+  const capped = Math.min(Math.max(targetVh, 36), 66.6667)
+  // During open phase, only allow the drawer to grow, not shrink
+  if (growOnlyOpenPhase.value && capped < commentsHeightVh.value)
+    return
+  commentsHeightVh.value = capped
 }
 
 // Observe changes
@@ -504,8 +510,16 @@ watch(commentsBodyEl, (el) => {
   }
 })
 watch([() => currentComments.value?.items?.length, showCommentsDrawer], async () => {
-  if (showCommentsDrawer.value)
+  if (showCommentsDrawer.value) {
     commentsHeightVh.value = 36
+    growOnlyOpenPhase.value = true
+    if (growOnlyTimer)
+      clearTimeout(growOnlyTimer)
+    growOnlyTimer = window.setTimeout(() => {
+      growOnlyOpenPhase.value = false
+      growOnlyTimer = null
+    }, 600)
+  }
   await nextTick()
   recomputeCommentsHeight()
 })
@@ -520,10 +534,23 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', recomputeCommentsHeight)
   if (commentsBodyRO)
     commentsBodyRO.disconnect()
+  if (growOnlyTimer)
+    clearTimeout(growOnlyTimer)
 })
 
 function toggleCommentsDrawer(ev?: Event) {
   ev?.stopPropagation?.()
+  const willOpen = !showCommentsDrawer.value
+  if (willOpen) {
+    commentsHeightVh.value = 36
+    growOnlyOpenPhase.value = true
+    if (growOnlyTimer)
+      clearTimeout(growOnlyTimer)
+    growOnlyTimer = window.setTimeout(() => {
+      growOnlyOpenPhase.value = false
+      growOnlyTimer = null
+    }, 600)
+  }
   showCommentsDrawer.value = !showCommentsDrawer.value
   if (showCommentsDrawer.value)
     showDescriptionDrawer.value = false
@@ -1538,8 +1565,9 @@ onBeforeUnmount(() => {
 
 /* Comments bottom sheet: up to 2/3 viewport height, dynamic */
 .comments-drawer {
-  height: min(var(--comments-height, 50vh), 66.6667vh);
+  height: min(var(--comments-height, 36vh), 66.6667vh);
   transition: height 200ms ease-in-out;
+  will-change: height;
 }
 .no-comments {
   opacity: 0.8;
