@@ -468,9 +468,12 @@ const commentsCount = computed(() => {
 // Dynamic comments drawer height: measure content and cap at 2/3 viewport
 const commentsHeaderEl = ref<HTMLElement | null>(null)
 const commentsBodyEl = ref<HTMLElement | null>(null)
-const commentsHeightVh = ref<number>(40)
+const commentsHeightVh = ref<number>(36)
 
 function recomputeCommentsHeight() {
+  // Skip measuring when the drawer is closed to avoid jarring first measurement
+  if (!showCommentsDrawer.value)
+    return
   const vhPx = window.innerHeight || document.documentElement.clientHeight || 0
   if (!vhPx)
     return
@@ -501,6 +504,8 @@ watch(commentsBodyEl, (el) => {
   }
 })
 watch([() => currentComments.value?.items?.length, showCommentsDrawer], async () => {
+  if (showCommentsDrawer.value)
+    commentsHeightVh.value = 36
   await nextTick()
   recomputeCommentsHeight()
 })
@@ -510,7 +515,6 @@ watch(currentIndex, async () => {
 })
 onMounted(() => {
   window.addEventListener('resize', recomputeCommentsHeight)
-  recomputeCommentsHeight()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', recomputeCommentsHeight)
@@ -1535,6 +1539,7 @@ onBeforeUnmount(() => {
 /* Comments bottom sheet: up to 2/3 viewport height, dynamic */
 .comments-drawer {
   height: min(var(--comments-height, 50vh), 66.6667vh);
+  transition: height 200ms ease-in-out;
 }
 .no-comments {
   opacity: 0.8;
