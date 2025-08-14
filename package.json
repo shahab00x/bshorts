@@ -16,7 +16,7 @@
     "test": "vitest",
     "up": "taze major -I",
     "postinstall": "npx simple-git-hooks",
-    "dev:debug": "cross-env VITE_SDK_DEBUG=true vite"
+    "dev:debug": "cross-env VITE_SDK_DEBUG=true vite --host --port 3333"
   },
   "dependencies": {
     "@vueuse/core": "^10.9.0",
