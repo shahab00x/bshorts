@@ -273,15 +273,31 @@ async function followAuthor(it: any) {
     followErrorByAddress.value[resolvedAddr] = null
     followLoadingByAddress.value[resolvedAddr] = true
 
-    // NOTE: RPC method name inferred from Bastyon API; adjust if backend differs.
-    await SdkService.rpc('subscribe', [resolvedAddr])
+    // Request required permissions (account) before signed action
+    await SdkService.checkAndRequestPermissions(['account'])
+    // Use SDK signed action instead of raw RPC
+    await SdkService.action('subscribe', { address: resolvedAddr, private: false })
     followedByAddress.value[resolvedAddr] = true
   }
   catch (e: any) {
-    const msg = e?.message || String(e)
+    let msg: string
+    if (e instanceof Error && e.message) {
+      msg = e.message
+    }
+    else if (typeof e === 'object') {
+      try {
+        msg = JSON.stringify(e)
+      }
+      catch {
+        msg = String(e)
+      }
+    }
+    else {
+      msg = String(e)
+    }
     if (resolvedAddr)
       followErrorByAddress.value[resolvedAddr] = msg
-    console.error('Follow failed:', msg)
+    console.error('Follow failed:', e)
   }
   finally {
     if (resolvedAddr)

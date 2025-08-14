@@ -107,6 +107,37 @@ export class SdkService {
   }
 
   /**
+   * Performs a signed action via the host SDK (e.g., posting, voting, subscribing).
+   * Unlike rpc(), this will create and broadcast a transaction via the host wallet.
+   * @param method The action name (e.g., 'subscribe', 'unsubscribe').
+   * @param payload The action payload object.
+   * @param options Optional options object for the host SDK.
+   */
+  public static async action(
+    method: string,
+    payload: Record<string, unknown> = {},
+    options: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    this.ensureInitialized()
+    try {
+      const sdkUnknown: unknown = this.sdk
+      const hasAction = (o: unknown): o is { action: (m: string, p?: any, opt?: any) => Promise<any> } => {
+        return typeof (o as { action?: unknown }).action === 'function'
+      }
+      if (!hasAction(sdkUnknown))
+        throw new Error('Host SDK does not support action(). Ensure running inside Bastyon host.')
+
+      // Cast to any to avoid TS error since BastyonSdk type doesn't declare action
+      const result = await (this.sdk as any).action(method, payload, options)
+      return result
+    }
+    catch (error) {
+      console.error('Error during SDK action:', error)
+      throw error
+    }
+  }
+
+  /**
    * Adds an event listener for a specific SDK event.
    * @param event The event name to listen to.
    * @param callback The callback function to handle the event data.
