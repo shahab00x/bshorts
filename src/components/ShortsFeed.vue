@@ -302,6 +302,7 @@ async function followAuthor(it: any) {
       return
     }
     // Use SDK signed action instead of raw RPC
+    console.log('Subscribing to', resolvedAddr)
     await SdkService.action('subscribe', { address: resolvedAddr, private: false })
     followedByAddress.value[resolvedAddr] = true
   }
