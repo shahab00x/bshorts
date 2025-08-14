@@ -192,6 +192,17 @@ function getAuthorAddress(it: any): string | null {
   )
 }
 
+// Helper: resolve author address using item or cached mapping by hash
+function getResolvedAuthorAddress(it: any): string | null {
+  const direct = getAuthorAddress(it)
+  if (direct)
+    return direct
+  const hash = it?.rawPost?.video_hash
+  if (hash)
+    return addressByHash.value[hash] || null
+  return null
+}
+
 // Helper: resolve address from a comment object (be tolerant to shapes)
 function resolveCommentAddress(c: any): string | null {
   if (!c || typeof c !== 'object')
@@ -240,12 +251,12 @@ function isAddressFollowed(addr?: string | null): boolean {
 }
 
 function isAuthorFollowed(it: any): boolean {
-  const addr = getAuthorAddress(it)
+  const addr = getResolvedAuthorAddress(it)
   return isAddressFollowed(addr)
 }
 
 function isFollowLoading(it: any): boolean {
-  const addr = getAuthorAddress(it)
+  const addr = getResolvedAuthorAddress(it)
   return !!(addr && followLoadingByAddress.value[addr])
 }
 

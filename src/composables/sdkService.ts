@@ -8,6 +8,8 @@
  */
 export class SdkService {
   private static sdk: BastyonSdk | null = null
+  // Session cache to avoid repeated permission prompts
+  private static permissionCache: Map<string, boolean> = new Map()
 
   /**
    * Initializes the Bastyon SDK at the very start of the application lifecycle.
@@ -131,7 +133,10 @@ export class SdkService {
   public static supportsAction(): boolean {
     this.ensureInitialized()
     const sdkUnknown: unknown = this.sdk
-    return typeof (sdkUnknown as any)?.action === 'function'
+    const has = typeof (sdkUnknown as any)?.action === 'function'
+    if (import.meta?.env?.VITE_SDK_DEBUG)
+      console.log('[SDK DEBUG] supportsAction():', has)
+    return has
   }
 
   /**
@@ -156,7 +161,11 @@ export class SdkService {
         throw new Error('Host SDK does not support action(). Ensure running inside Bastyon host.')
 
       // Cast to any to avoid TS error since BastyonSdk type doesn't declare action
+      if (import.meta?.env?.VITE_SDK_DEBUG)
+        console.log('[SDK DEBUG] invoking action()', { method, payload, options })
       const result = await (this.sdk as any).action(method, payload, options)
+      if (import.meta?.env?.VITE_SDK_DEBUG)
+        console.log('[SDK DEBUG] action() result:', result)
       return result
     }
     catch (error) {
@@ -219,11 +228,36 @@ export class SdkService {
   public static async checkAndRequestPermissions(permissions: string[]): Promise<void> {
     this.ensureInitialized()
     try {
+      const missing: string[] = []
       for (const permission of permissions) {
-        const granted = await this.sdk!.permissions.check({ permission })
-        if (!granted)
-          await this.sdk!.permissions.request([permission])
+        // Use session cache first to avoid repeated prompts
+        const cached = this.permissionCache.get(permission)
+        if (cached === true)
+          continue
+
+        let granted = false
+        try {
+          granted = await this.sdk!.permissions.check({ permission }) as unknown as boolean
+        }
+        catch (e) {
+          console.warn('permissions.check failed for', permission, e)
+        }
+
+        if (granted)
+          this.permissionCache.set(permission, true)
+
+        else
+          missing.push(permission)
       }
+
+      if (missing.length) {
+        if (import.meta?.env?.VITE_SDK_DEBUG)
+          console.log('[SDK DEBUG] requesting permissions:', missing)
+        await this.sdk!.permissions.request(missing)
+        for (const p of missing)
+          this.permissionCache.set(p, true)
+      }
+
       console.log('All required permissions granted:', permissions)
     }
     catch (error) {
