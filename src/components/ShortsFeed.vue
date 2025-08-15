@@ -833,6 +833,8 @@ async function fetchRepliesFor(hash: string, parentId: string): Promise<any[]> {
   rs.loading = true
   rs.error = null
   try {
+    if (import.meta?.env?.VITE_SDK_DEBUG)
+      console.debug('[replies] fetchRepliesFor(): start', { hash, parentId })
     // getcomments supports parent comment id as the 2nd param (fallback-friendly)
     const res: any = await SdkService.rpc('getcomments', [hash, parentId, ''])
     let items: any[] = []
@@ -845,6 +847,8 @@ async function fetchRepliesFor(hash: string, parentId: string): Promise<any[]> {
     else if (res?.data && Array.isArray(res.data))
       items = res.data
     rs.items = items
+    if (import.meta?.env?.VITE_SDK_DEBUG)
+      console.debug('[replies] fetchRepliesFor(): fetched', { parentId, count: items.length })
     // proactively fetch avatars for reply authors
     const addrs = new Set<string>()
     for (const c of items) {
@@ -858,10 +862,14 @@ async function fetchRepliesFor(hash: string, parentId: string): Promise<any[]> {
   }
   catch (e: any) {
     rs.error = e?.message || String(e)
+    if (import.meta?.env?.VITE_SDK_DEBUG)
+      console.warn('[replies] fetchRepliesFor(): error', { parentId, error: rs.error })
     return []
   }
   finally {
     rs.loading = false
+    if (import.meta?.env?.VITE_SDK_DEBUG)
+      console.debug('[replies] fetchRepliesFor(): done', { parentId })
   }
 }
 
@@ -875,6 +883,8 @@ async function toggleRepliesForComment(c: any) {
   const st = ensureCommentState(hash)
   const willOpen = !st.openRepliesById[id]
   st.openRepliesById[id] = willOpen
+  if (import.meta?.env?.VITE_SDK_DEBUG)
+    console.debug('[replies] toggleRepliesForComment()', { id, willOpen })
   if (willOpen) {
     // If replies are not inline on the comment, fetch them
     if (!hasInlineReplies(c))
@@ -2154,7 +2164,7 @@ watch(visibleIndices, (idxs) => {
                       <img :src="u" loading="lazy" decoding="async" alt="attachment">
                     </a>
                   </div>
-                  <div v-if="getReplyCount(c) > 0 || hasInlineReplies(c)" class="replies-toggle-row">
+                  <div v-if="hasInlineReplies(c) || getReplyCount(c) > 0 || !!resolveCommentId(c)" class="replies-toggle-row">
                     <button class="replies-toggle-btn" @click="toggleRepliesForComment(c)">
                       <template v-if="isRepliesOpen(c)">
                         Hide replies
