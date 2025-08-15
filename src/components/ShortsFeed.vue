@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+
 import HlsVideo from '~/components/HlsVideo.vue'
 import PerfOverlay from '~/components/PerfOverlay.vue'
 import LoadingSpinner from '~/components/LoadingSpinner.vue'
 import { appConfig } from '~/config'
 import { SdkService } from '~/composables'
 
-interface PeertubeInfo { hlsUrl: string }
+interface PeertubeInfo { hlsUrl: string, apiUrl?: string }
 
 interface VideoItem {
   description?: string
@@ -78,6 +79,16 @@ const followErrorByAddress = ref<Record<string, string | null>>({})
 // Avatars readiness (per post hash)
 const avatarsReadyByHash = ref<Record<string, boolean>>({})
 const avatarsPreparingByHash = ref<Record<string, boolean>>({})
+
+// Peertube metadata cache (by item key: apiUrl or hash)
+interface PeerMeta {
+  views?: number | null
+  publishedAt?: string | null
+  loading?: boolean
+  error?: string | null
+  fetchedAt?: number
+}
+const peerMetaByKey = ref<Record<string, PeerMeta>>({})
 
 // Lazy rendering state: visible count per hash
 const visibleCountByHash = ref<Record<string, number>>({})
@@ -420,6 +431,49 @@ function formatReputation(n: number): string {
   if (abs >= 1_000)
     return `${trim(n / 1_000)}k`
   return String(n)
+}
+
+// Generic count formatter for views
+function formatCount(n: number): string {
+  const abs = Math.abs(n)
+  const trim = (v: number) => {
+    const s = v.toFixed(1)
+    return s.endsWith('.0') ? s.slice(0, -2) : s
+  }
+  if (abs >= 1_000_000_000)
+    return `${trim(n / 1_000_000_000)}b`
+  if (abs >= 1_000_000)
+    return `${trim(n / 1_000_000)}m`
+  if (abs >= 1_000)
+    return `${trim(n / 1_000)}k`
+  return String(n)
+}
+
+function formatRelativeTime(iso?: string | null): string {
+  if (!iso)
+    return ''
+  const t = Date.parse(iso)
+  if (!Number.isFinite(t))
+    return ''
+  const now = Date.now()
+  const diff = Math.max(0, now - t)
+  const sec = Math.floor(diff / 1000)
+  if (sec < 60)
+    return `${sec}s ago`
+  const min = Math.floor(sec / 60)
+  if (min < 60)
+    return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24)
+    return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  if (day < 30)
+    return `${day}d ago`
+  const mo = Math.floor(day / 30)
+  if (mo < 12)
+    return `${mo}mo ago`
+  const yr = Math.floor(mo / 12)
+  return `${yr}y ago`
 }
 
 // Fetch author address (if needed) and reputation for a given content hash
@@ -1084,6 +1138,19 @@ function getHls(item: VideoItem): string | null {
   return item.videoInfo?.peertube?.hlsUrl || item.rawPost?.peertube?.hlsUrl || null
 }
 
+function getPeerApiUrl(item: VideoItem | any): string | null {
+  return (
+    item?.videoInfo?.peertube?.apiUrl
+    ?? item?.rawPost?.peertube?.apiUrl
+    ?? null
+  )
+}
+
+function getItemMetaKey(item: VideoItem | any): string | null {
+  // Prefer API URL for uniqueness; fall back to Bastyon txid
+  return getPeerApiUrl(item) || item?.rawPost?.video_hash || null
+}
+
 function inWindow(idx: number) {
   // Render previous 1 and next N items to limit downloads
   // N is configured via appConfig.preloadAhead
@@ -1407,6 +1474,101 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', onAppFocus)
   document.removeEventListener('visibilitychange', onVisibilityChange)
 })
+
+// ----- Peertube metadata fetching (views + upload date) -----
+function ensurePeerMetaForItem(item: any) {
+  const url = getPeerApiUrl(item)
+  const key = getItemMetaKey(item)
+  if (!url || !key)
+    return
+  const st = peerMetaByKey.value[key]
+  if (st?.loading || st?.fetchedAt)
+    return
+  peerMetaByKey.value[key] = { loading: true, error: null, views: null, publishedAt: null, fetchedAt: 0 }
+  void fetchPeertubeMetaFor(key, url)
+}
+
+async function fetchPeertubeMetaFor(key: string, url: string) {
+  try {
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok)
+      throw new Error(`Peertube meta HTTP ${res.status}`)
+    const json: any = await res.json()
+    const views = extractViews(json)
+    const publishedAt = extractPublishedAt(json)
+    peerMetaByKey.value[key] = {
+      loading: false,
+      error: null,
+      views,
+      publishedAt,
+      fetchedAt: Date.now(),
+    }
+  }
+  catch (e: any) {
+    peerMetaByKey.value[key] = {
+      loading: false,
+      error: e?.message || String(e),
+      views: null,
+      publishedAt: null,
+      fetchedAt: Date.now(),
+    }
+  }
+}
+
+function extractViews(json: any): number | null {
+  if (!json || typeof json !== 'object')
+    return null
+  if (typeof json.views === 'number')
+    return json.views
+  if (typeof json.viewCount === 'number')
+    return json.viewCount
+  const stats = json.stats || json.stat || json.statistics
+  if (stats && typeof stats.views === 'number')
+    return stats.views
+  return null
+}
+
+function extractPublishedAt(json: any): string | null {
+  if (!json || typeof json !== 'object')
+    return null
+  const candidates = [
+    json.publishedAt,
+    json.createdAt,
+    json.uploadedAt,
+    json.uploadDate,
+    json.originallyPublishedAt,
+  ]
+  for (const c of candidates) {
+    if (typeof c === 'string' && c)
+      return c
+  }
+  return null
+}
+
+function peerMetaString(item: any): string {
+  if (!item)
+    return ''
+  const key = getItemMetaKey(item)
+  const st = key ? peerMetaByKey.value[key] : undefined
+  if (!st)
+    return ''
+  const parts: string[] = []
+  if (st.views != null)
+    parts.push(`${formatCount(st.views)} views`)
+  const rel = formatRelativeTime(st.publishedAt)
+  if (rel)
+    parts.push(rel)
+  return parts.join(' · ')
+}
+
+// Trigger fetch for visible items and preloads
+watch(visibleIndices, (idxs) => {
+  for (const idx of idxs) {
+    const it = items.value[idx]
+    if (it)
+      ensurePeerMetaForItem(it)
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -1502,6 +1664,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="desc" title="View description" @click.stop="openDescriptionDrawer">
               {{ vi.item.description }}
+              <span v-if="peerMetaString(vi.item)" class="desc-meta"> · {{ peerMetaString(vi.item) }}</span>
             </div>
           </div>
           <div class="seekbar">
@@ -1594,6 +1757,7 @@ onBeforeUnmount(() => {
           <template v-if="descCaption">
             <h4 class="desc-title">
               {{ descCaption }}
+              <span v-if="peerMetaString(currentItem)" class="desc-meta"> · {{ peerMetaString(currentItem) }}</span>
             </h4>
           </template>
           <div class="desc-text" @click="onDescHtmlClick" v-html="descHtml" />
@@ -1872,6 +2036,12 @@ onBeforeUnmount(() => {
   opacity: 0.9;
   font-size: 0.95rem;
   cursor: pointer;
+}
+.desc-meta {
+  opacity: 0.8;
+  margin-left: 6px;
+  font-size: 0.9em;
+  color: rgba(255, 255, 255, 0.85);
 }
 .seekbar {
   margin-top: 8px;
