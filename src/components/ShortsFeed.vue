@@ -844,7 +844,10 @@ function getKnownReplyCount(c: any): number {
 function shouldShowRepliesToggle(c: any): boolean {
   if (isRepliesOpen(c))
     return true
-  return getKnownReplyCount(c) > 0
+  if (getKnownReplyCount(c) > 0)
+    return true
+  // If we can fetch replies by id, allow showing the toggle even if count is unknown
+  return !!resolveCommentId(c)
 }
 
 async function fetchRepliesFor(hash: string, parentId: string): Promise<any[]> {

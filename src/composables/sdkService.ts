@@ -115,16 +115,52 @@ export class SdkService {
     options: Record<string, unknown> = {},
   ): Promise<unknown> {
     this.ensureInitialized()
-    try {
-      // Some host SDK builds expect an options object and read properties like `cachetime`.
-      // Ensure we always pass an object to avoid undefined access inside the host.
-      const result = await this.sdk!.rpc(method, parameters, options)
-      return result
+    // Retry transient network/JSON errors a couple of times with a tiny backoff.
+    const isTransientError = (err: any): boolean => {
+      try {
+        const msg = String(err?.message || err).toLowerCase()
+        return (
+          msg.includes('unexpected end of json')
+          || msg.includes('unexpected eof')
+          || msg.includes('failed to fetch')
+          || msg.includes('networkerror')
+          || msg.includes('network error')
+          || msg.includes('load failed')
+          || msg.includes('aborted')
+          || msg.includes('timeout')
+        )
+      }
+      catch {
+        return false
+      }
     }
-    catch (error) {
-      console.error('Error during RPC call:', error)
-      throw error
+
+    const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+    let lastErr: unknown
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        // Ensure options object is defined, and on retries set a small cachetime to reduce load.
+        const opts = { ...(options || {}) } as Record<string, unknown>
+        if (attempt > 0 && (opts as any).cachetime == null)
+          (opts as any).cachetime = 15
+
+        const result = await this.sdk!.rpc(method, parameters, opts)
+        return result
+      }
+      catch (error) {
+        lastErr = error
+        if (isTransientError(error) && attempt < 2) {
+          if (import.meta?.env?.VITE_SDK_DEBUG)
+            console.warn('[SDK RPC] transient error, retrying', { method, attempt: attempt + 1 })
+          await sleep(150 * (attempt + 1))
+          continue
+        }
+        console.error('Error during RPC call:', error, { method })
+        throw error
+      }
     }
+    throw lastErr
   }
 
   /**
