@@ -51,6 +51,9 @@ importers:
       '@vue/test-utils':
         specifier: ^2.4.6
         version: 2.4.6
+      cross-env:
+        specifier: ^10.0.0
+        version: 10.0.0
       eslint:
         specifier: ^9.3.0
         version: 9.3.0
@@ -344,6 +347,9 @@ packages:
 
   '@dprint/toml@0.6.4':
     resolution: {integrity: sha512-bZXIUjxr0LIuHWshZr/5mtUkOrnh0NKVZEF6ACojW5z7zkJu7s9sV2mMXm8XQDqN4cJzdHYUYzUyEGdfciaLJA==}
+
+  '@epic-web/invariant@1.0.0':
+    resolution: {integrity: sha512-lrTPqgvfFQtR/eY/qkIzp98OGdNJu0m5ji3q/nJI8v3SXkRKEnWiOxMmbvcSoAIzv/cGiuvRy57k4suKQSAdwA==}
 
   '@es-joy/jsdoccomment@0.46.0':
     resolution: {integrity: sha512-C3Axuq1xd/9VqFZpW4YAzOx5O9q/LP46uIQy/iNDpHG3fmPa6TBtvfglMCs3RBiBxAIi0Go97r8+jvTt55XMyQ==}
@@ -1442,6 +1448,11 @@ packages:
 
   core-js-compat@3.44.0:
     resolution: {integrity: sha512-JepmAj2zfl6ogy34qfWtcE7nHKAJnKsQFRn++scjVS2bZFllwptzw61BZcZFYBPpUznLfAvh0LGhxKppk04ClA==}
+
+  cross-env@10.0.0:
+    resolution: {integrity: sha512-aU8qlEK/nHYtVuN4p7UQgAwVljzMg8hB4YK5ThRqD2l/ziSnryncPNn7bMLt5cFYsKVKBh8HqLqyCoTupEUu7Q==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -3552,6 +3563,8 @@ snapshots:
 
   '@dprint/toml@0.6.4': {}
 
+  '@epic-web/invariant@1.0.0': {}
+
   '@es-joy/jsdoccomment@0.46.0':
     dependencies:
       comment-parser: 1.4.1
@@ -4844,6 +4857,11 @@ snapshots:
   core-js-compat@3.44.0:
     dependencies:
       browserslist: 4.25.1
+
+  cross-env@10.0.0:
+    dependencies:
+      '@epic-web/invariant': 1.0.0
+      cross-spawn: 7.0.6
 
   cross-spawn@7.0.6:
     dependencies:

@@ -20,6 +20,7 @@ const emit = defineEmits<{
   (e: 'loadingChange', loading: boolean): void
   (e: 'progress', payload: { currentTime: number, duration: number }): void
   (e: 'buffered', payload: { ranges: { start: number, end: number }[], duration: number }): void
+  (e: 'ended'): void
 }>()
 const videoEl = ref<HTMLVideoElement | null>(null)
 let hls: Hls | null = null
@@ -65,6 +66,11 @@ function onTimeUpdate() {
   emitBuffered()
 }
 
+function onEnded() {
+  onReady()
+  emit('ended')
+}
+
 function emitBuffered() {
   const el = videoEl.value
   if (!el)
@@ -102,7 +108,7 @@ function attachVideoEvents() {
     onReady()
     emitBuffered()
   })
-  el.addEventListener('ended', onReady)
+  el.addEventListener('ended', onEnded)
   el.addEventListener('durationchange', onReady)
   el.addEventListener('timeupdate', onTimeUpdate)
 }
@@ -122,7 +128,7 @@ function detachVideoEvents() {
   el.removeEventListener('playing', onReady)
   el.removeEventListener('play', onReady)
   // progress had an inline listener; safe to ignore explicit removal here
-  el.removeEventListener('ended', onReady)
+  el.removeEventListener('ended', onEnded)
   el.removeEventListener('durationchange', onReady)
   el.removeEventListener('timeupdate', onTimeUpdate)
 }

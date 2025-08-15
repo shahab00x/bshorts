@@ -55,6 +55,7 @@ const wasPlayingBeforeOpenPost = ref(false)
 // Drawer state
 const showDescriptionDrawer = ref(false)
 const showCommentsDrawer = ref(false)
+const showSettingsDrawer = ref(false)
 
 // Comments state (cache by post hash)
 interface CommentState { items: any[], loading: boolean, error: string | null, fetchedAt: number }
@@ -1020,9 +1021,16 @@ function openDescriptionDrawer(ev?: Event) {
   showDescriptionDrawer.value = true
   showCommentsDrawer.value = false
 }
+function openSettingsDrawer(ev?: Event) {
+  ev?.stopPropagation?.()
+  showSettingsDrawer.value = true
+  showDescriptionDrawer.value = false
+  showCommentsDrawer.value = false
+}
 function closeAnyDrawer() {
   showDescriptionDrawer.value = false
   showCommentsDrawer.value = false
+  showSettingsDrawer.value = false
 }
 
 function closeDrawer(which: 'desc' | 'comments') {
@@ -1096,12 +1104,49 @@ function onDrawerTouchEnd() {
   draggingWhich.value = null
 }
 
+// Settings drawer (left side) horizontal drag-to-close
+const settingsDragging = ref(false)
+let settingsDragStartX = 0
+const settingsDragOffset = ref(0)
+function onSettingsTouchStart(ev: TouchEvent, fromHeader = false) {
+  const t = ev.touches && ev.touches[0]
+  if (!t)
+    return
+  settingsDragging.value = true
+  settingsDragStartX = t.clientX
+  if (fromHeader)
+    ev.preventDefault()
+}
+function onSettingsTouchMove(ev: TouchEvent) {
+  if (!settingsDragging.value)
+    return
+  const t = ev.touches && ev.touches[0]
+  if (!t)
+    return
+  const dx = t.clientX - settingsDragStartX
+  // Only allow dragging left to close
+  const allow = dx < 0
+  settingsDragOffset.value = allow ? Math.max(0, -dx) : 0
+  if (allow)
+    ev.preventDefault()
+}
+function onSettingsTouchEnd() {
+  if (!settingsDragging.value)
+    return
+  const threshold = 60
+  if (settingsDragOffset.value > threshold)
+    showSettingsDrawer.value = false
+  settingsDragOffset.value = 0
+  settingsDragging.value = false
+}
+
 // Pager container + navigation state
 const pagerRef = ref<HTMLElement | null>(null)
 const isPaging = ref(false)
 let lastNavAt = 0
 let touchStartY = 0
 let touchStartTime = 0
+let touchStartX = 0
 
 // Pager-mode window derived from current index
 const visibleStart = computed(() => Math.max(0, currentIndex.value - 1))
@@ -1405,6 +1450,7 @@ function onTouchStart(ev: TouchEvent) {
   if (ev.touches.length > 0) {
     touchStartY = ev.touches[0].clientY
     touchStartTime = performance.now()
+    touchStartX = ev.touches[0].clientX
   }
 }
 function onTouchEnd(ev: TouchEvent) {
@@ -1412,8 +1458,19 @@ function onTouchEnd(ev: TouchEvent) {
   if (!touch)
     return
   const dy = touch.clientY - touchStartY
+  const dx = touch.clientX - touchStartX
+  const ady = Math.abs(dy)
+  const adx = Math.abs(dx)
   const dt = performance.now() - touchStartTime
-  if (Math.abs(dy) > 50 && dt < 800) {
+  // Horizontal swipe: left-to-right opens Settings
+  if (adx > 50 && adx > ady && dt < 800) {
+    if (dx > 0) {
+      openSettingsDrawer()
+      return
+    }
+  }
+  // Vertical swipe: navigate between videos
+  if (ady > 50 && dt < 800) {
     if (dy < 0)
       nextPage()
     else
@@ -1730,7 +1787,11 @@ watch(visibleIndices, (idxs) => {
       </section>
     </div>
     <!-- Screen tint overlay when any drawer is open -->
-    <div class="screen-tint" :class="{ visible: showDescriptionDrawer || showCommentsDrawer }" @click="closeAnyDrawer" />
+    <div
+      class="screen-tint"
+      :class="{ visible: showDescriptionDrawer || showCommentsDrawer || showSettingsDrawer }"
+      @click="closeAnyDrawer"
+    />
 
     <!-- Description Bottom Sheet -->
     <div
@@ -1845,6 +1906,41 @@ watch(visibleIndices, (idxs) => {
               </div>
             </li>
           </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Drawer (left side) -->
+    <div
+      class="side-drawer-base settings-drawer"
+      :class="{ open: showSettingsDrawer, dragging: settingsDragging }"
+      :style="settingsDragging ? { transform: `translateX(-${settingsDragOffset}px)` } : null"
+      @click.self="closeAnyDrawer"
+    >
+      <div class="drawer-content" @click.stop>
+        <div
+          class="drawer-header"
+          @touchstart="onSettingsTouchStart($event, true)"
+          @touchmove="onSettingsTouchMove($event)"
+          @touchend="onSettingsTouchEnd"
+        >
+          <h3>Settings</h3>
+        </div>
+        <div
+          class="drawer-body settings-body"
+          @touchstart="onSettingsTouchStart($event)"
+          @touchmove="onSettingsTouchMove($event)"
+          @touchend="onSettingsTouchEnd"
+        >
+          <div style="opacity: 0.9;">
+            <p style="margin: 0 0 10px 0;">
+              Settings panel (WIP)
+            </p>
+            <ul style="margin: 0; padding-left: 16px; line-height: 1.6;">
+              <li>Example setting 1</li>
+              <li>Example setting 2</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>
@@ -2210,6 +2306,24 @@ watch(visibleIndices, (idxs) => {
   transform: translateY(0%);
 }
 .drawer-base.dragging {
+  transition: none;
+}
+.side-drawer-base {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: clamp(280px, 82vw, 420px);
+  transform: translateX(-100%);
+  transition: transform 240ms ease;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+}
+.side-drawer-base.open {
+  transform: translateX(0%);
+}
+.side-drawer-base.dragging {
   transition: none;
 }
 .drawer-content {
