@@ -48,6 +48,9 @@ const showTooltip = ref(false)
 const tooltipIdx = ref<number | null>(null)
 const tooltipPct = ref(0)
 
+// Track playback state around opening the host post UI
+const wasPlayingBeforeOpenPost = ref(false)
+
 // Drawer state
 const showDescriptionDrawer = ref(false)
 const showCommentsDrawer = ref(false)
@@ -938,6 +941,9 @@ async function toggleCommentsDrawer(ev?: Event) {
 async function openCommentsInHost(ev?: Event) {
   try {
     ev?.stopPropagation?.()
+    // If the current video is playing, pause it before opening the host UI
+    wasPlayingBeforeOpenPost.value = isCurrentVideoPlaying()
+    pauseCurrentVideo()
     const txid = currentVideoHash.value
     if (!txid) {
       console.warn('No current video hash to open comments for.')
@@ -947,6 +953,11 @@ async function openCommentsInHost(ev?: Event) {
   }
   catch (e) {
     console.warn('Host open.post unavailable; falling back to in-app comments drawer', e)
+    // Since we paused for host UI, resume playback if it was previously playing
+    if (wasPlayingBeforeOpenPost.value) {
+      resumeCurrentVideo()
+      wasPlayingBeforeOpenPost.value = false
+    }
     await toggleCommentsDrawer(ev)
   }
 }
@@ -1123,6 +1134,58 @@ function onSectionClick(idx: number) {
 
 function enableSound() {
   soundOn.value = true
+}
+
+// ----- Playback helpers for pause/resume around opening host UI -----
+function getCurrentVideoRef(): any | null {
+  return videoRefs.value[currentIndex.value] || null
+}
+
+function isCurrentVideoPlaying(): boolean {
+  const vr = getCurrentVideoRef()
+  const el: HTMLVideoElement | null | undefined = vr?.el
+  if (el)
+    return !el.paused && !el.ended
+  // Fallback to logical state
+  return !paused.value
+}
+
+function pauseCurrentVideo() {
+  try {
+    getCurrentVideoRef()?.pause?.()
+  }
+  catch (err) {
+    void err
+  }
+  paused.value = true
+}
+
+function resumeCurrentVideo() {
+  // Resume only the current card; ensure global sound on
+  soundOn.value = true
+  paused.value = false
+  try {
+    getCurrentVideoRef()?.play?.()
+  }
+  catch (err) {
+    void err
+  }
+}
+
+function maybeResumeFromHostReturn() {
+  if (document.visibilityState === 'visible' && wasPlayingBeforeOpenPost.value && paused.value) {
+    resumeCurrentVideo()
+    wasPlayingBeforeOpenPost.value = false
+  }
+}
+
+function onAppFocus() {
+  maybeResumeFromHostReturn()
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible')
+    maybeResumeFromHostReturn()
 }
 
 async function loadPlaylist() {
@@ -1333,11 +1396,16 @@ function onHashtagClick(tag: string, ev?: Event) {
 
 onMounted(() => {
   void loadPlaylist()
+  // Resume playback if we paused due to opening the host UI and the app regains focus/visibility
+  window.addEventListener('focus', onAppFocus)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 
 onBeforeUnmount(() => {
   // Safety: remove pointer listeners if scrubbing during unmount
   window.removeEventListener('pointermove', onWindowPointerMove)
+  window.removeEventListener('focus', onAppFocus)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>
 
@@ -1585,7 +1653,7 @@ onBeforeUnmount(() => {
             <LoadingSpinner :size="40" aria-label="Loading comments" />
           </div>
           <div v-else-if="currentComments?.error" class="center-msg text-red">
-            {{ currentComments.error }}
+            {{ currentComments?.error }}
             <div style="margin-top: 8px;">
               <button class="retry-btn" @click="refreshComments">
                 Retry
