@@ -939,6 +939,17 @@ function recomputeCommentsHeight() {
     justOpened.value = false
 }
 
+// Debounced (rAF) comments height recompute to reduce layout thrash
+let recomputeRaf = 0
+function scheduleRecomputeCommentsHeight() {
+  if (recomputeRaf)
+    cancelAnimationFrame(recomputeRaf)
+  recomputeRaf = requestAnimationFrame(() => {
+    recomputeRaf = 0
+    recomputeCommentsHeight()
+  })
+}
+
 // Observe changes
 let commentsBodyRO: ResizeObserver | null = null
 watch(commentsBodyEl, (el) => {
@@ -948,7 +959,7 @@ watch(commentsBodyEl, (el) => {
   }
   if (el && typeof ResizeObserver !== 'undefined') {
     commentsBodyRO = new ResizeObserver(() => {
-      recomputeCommentsHeight()
+      scheduleRecomputeCommentsHeight()
     })
     commentsBodyRO.observe(el)
   }
@@ -958,26 +969,28 @@ watch([() => currentComments.value?.items?.length, showCommentsDrawer], async ()
     commentsHeightVh.value = 28
 
   await nextTick()
-  recomputeCommentsHeight()
+  scheduleRecomputeCommentsHeight()
 })
 // While loading, allow only growth to avoid initial shrink flicker; once loaded, allow shrinking
 watch(() => currentComments.value?.loading, async () => {
   if (!showCommentsDrawer.value)
     return
   await nextTick()
-  recomputeCommentsHeight()
+  scheduleRecomputeCommentsHeight()
 })
 watch(currentIndex, async () => {
   await nextTick()
-  recomputeCommentsHeight()
+  scheduleRecomputeCommentsHeight()
 })
 onMounted(() => {
-  window.addEventListener('resize', recomputeCommentsHeight)
+  window.addEventListener('resize', scheduleRecomputeCommentsHeight)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', recomputeCommentsHeight)
+  window.removeEventListener('resize', scheduleRecomputeCommentsHeight)
   if (commentsBodyRO)
     commentsBodyRO.disconnect()
+  if (recomputeRaf)
+    cancelAnimationFrame(recomputeRaf)
 })
 
 async function toggleCommentsDrawer(ev?: Event) {
@@ -1643,8 +1656,8 @@ watch(visibleIndices, (idxs) => {
       class="pager-root"
       tabindex="0"
       @wheel="onWheel"
-      @touchstart.passive="onTouchStart"
-      @touchend.passive="onTouchEnd"
+      @touchstart="onTouchStart"
+      @touchend="onTouchEnd"
       @keydown="onKeyDown"
     >
       <section
@@ -1968,7 +1981,8 @@ watch(visibleIndices, (idxs) => {
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  touch-action: pan-x; /* allow vertical swipes to be handled */
+  touch-action: none; /* let the app handle both vertical and horizontal gestures */
+  overscroll-behavior: contain; /* prevent browser/host overscroll effects */
 }
 .pager-item {
   position: absolute;
