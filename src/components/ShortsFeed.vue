@@ -58,7 +58,15 @@ const showCommentsDrawer = ref(false)
 const showSettingsDrawer = ref(false)
 
 // Comments state (cache by post hash)
-interface CommentState { items: any[], loading: boolean, error: string | null, fetchedAt: number }
+interface ReplyState { items: any[], loading: boolean, error: string | null }
+interface CommentState {
+  items: any[]
+  loading: boolean
+  error: string | null
+  fetchedAt: number
+  repliesById: Record<string, ReplyState>
+  openRepliesById: Record<string, boolean>
+}
 const commentsByHash = ref<Record<string, CommentState>>({})
 
 // Avatars cache (by address)
@@ -177,6 +185,20 @@ function collectAddressesForHash(hash: string): Set<string> {
     const a = resolveCommentAddress(c)
     if (a)
       addrs.add(a)
+    // If replies are open for this comment, include their authors as well
+    try {
+      const id = resolveCommentId(c)
+      if (id && st?.openRepliesById?.[id]) {
+        const rs = st?.repliesById?.[id]
+        const arr = rs?.items || []
+        for (const rc of arr) {
+          const ra = resolveCommentAddress(rc)
+          if (ra)
+            addrs.add(ra)
+        }
+      }
+    }
+    catch {}
   }
   return addrs
 }
@@ -641,7 +663,7 @@ function onCommentsScroll(ev: Event) {
 
 function ensureCommentState(hash: string): CommentState {
   if (!commentsByHash.value[hash])
-    commentsByHash.value[hash] = { items: [], loading: false, error: null, fetchedAt: 0 }
+    commentsByHash.value[hash] = { items: [], loading: false, error: null, fetchedAt: 0, repliesById: {}, openRepliesById: {} }
   return commentsByHash.value[hash]
 }
 
@@ -747,6 +769,161 @@ async function fetchCommentsFor(hash: string, { force = false }: { force?: boole
   finally {
     state.loading = false
   }
+}
+
+// ----- Replies helpers -----
+function resolveCommentId(c: any): string | null {
+  if (!c || typeof c !== 'object')
+    return null
+  const direct = c.commentid || c.comment_id || c.cid || c.id || c.txid || c.hash || c.rhash
+  if (typeof direct === 'string' && direct)
+    return direct
+  // nested possibilities
+  const nested = (c.comment || c.data || c.meta || {}) as any
+  const nd = nested.commentid || nested.comment_id || nested.id || nested.txid || nested.hash
+  if (typeof nd === 'string' && nd)
+    return nd
+  return null
+}
+
+function hasInlineReplies(c: any): boolean {
+  return Array.isArray((c as any)?.replies)
+    || Array.isArray((c as any)?.children)
+    || Array.isArray((c as any)?.items)
+}
+
+function getInlineReplies(c: any): any[] {
+  const a = (c as any)?.replies
+  if (Array.isArray(a))
+    return a
+  const b = (c as any)?.children
+  if (Array.isArray(b))
+    return b
+  const d = (c as any)?.items
+  if (Array.isArray(d))
+    return d
+  return []
+}
+
+function getReplyCount(c: any): number {
+  // Prefer explicit counts
+  const fields = ['reply_count', 'repliesCount', 'repliescount', 'commentcnt', 'childrenCount']
+  for (const f of fields) {
+    const v = (c as any)?.[f]
+    const n = typeof v === 'string' ? Number(v) : v
+    if (Number.isFinite(n) && n! >= 0)
+      return Number(n)
+  }
+  // Fallback to inline replies length, if present
+  const arr = getInlineReplies(c)
+  if (Array.isArray(arr))
+    return arr.length
+  return 0
+}
+
+async function fetchRepliesFor(hash: string, parentId: string): Promise<any[]> {
+  const st = ensureCommentState(hash)
+  if (!st.repliesById[parentId])
+    st.repliesById[parentId] = { items: [], loading: false, error: null }
+  const rs = st.repliesById[parentId]
+  if (rs.loading)
+    return rs.items
+  if (rs.items.length)
+    return rs.items
+  rs.loading = true
+  rs.error = null
+  try {
+    // getcomments supports parent comment id as the 2nd param (fallback-friendly)
+    const res: any = await SdkService.rpc('getcomments', [hash, parentId, ''])
+    let items: any[] = []
+    if (Array.isArray(res))
+      items = res
+    else if (res?.comments && Array.isArray(res.comments))
+      items = res.comments
+    else if (res?.result && Array.isArray(res.result))
+      items = res.result
+    else if (res?.data && Array.isArray(res.data))
+      items = res.data
+    rs.items = items
+    // proactively fetch avatars for reply authors
+    const addrs = new Set<string>()
+    for (const c of items) {
+      const a = resolveCommentAddress(c)
+      if (a)
+        addrs.add(a)
+    }
+    if (addrs.size)
+      await fetchProfiles(addrs)
+    return rs.items
+  }
+  catch (e: any) {
+    rs.error = e?.message || String(e)
+    return []
+  }
+  finally {
+    rs.loading = false
+  }
+}
+
+async function toggleRepliesForComment(c: any) {
+  const hash = currentVideoHash.value
+  if (!hash)
+    return
+  const id = resolveCommentId(c)
+  if (!id)
+    return
+  const st = ensureCommentState(hash)
+  const willOpen = !st.openRepliesById[id]
+  st.openRepliesById[id] = willOpen
+  if (willOpen) {
+    // If replies are not inline on the comment, fetch them
+    if (!hasInlineReplies(c))
+      void fetchRepliesFor(hash, id)
+    // ensure avatars ready keeps up as replies open
+    void ensureAvatarsReadyForHash(hash)
+  }
+}
+
+function isRepliesOpen(c: any): boolean {
+  const h = currentVideoHash.value
+  if (!h)
+    return false
+  const id = resolveCommentId(c)
+  if (!id)
+    return false
+  return !!commentsByHash.value[h]?.openRepliesById[id]
+}
+
+function repliesListFor(c: any): any[] {
+  if (hasInlineReplies(c))
+    return getInlineReplies(c)
+  const h = currentVideoHash.value
+  if (!h)
+    return []
+  const id = resolveCommentId(c)
+  if (!id)
+    return []
+  return commentsByHash.value[h]?.repliesById[id]?.items || []
+}
+
+function repliesLoading(c: any): boolean {
+  if (hasInlineReplies(c))
+    return false
+  const h = currentVideoHash.value
+  const id = resolveCommentId(c)
+  if (!h || !id)
+    return false
+  return !!commentsByHash.value[h]?.repliesById[id]?.loading
+}
+
+function repliesError(c: any): string | null {
+  if (hasInlineReplies(c))
+    return null
+  const h = currentVideoHash.value
+  const id = resolveCommentId(c)
+  if (!h || !id)
+    return null
+  return commentsByHash.value[h]?.repliesById[id]?.error || null
 }
 
 function fetchCommentsForCurrentIfNeeded() {
@@ -890,6 +1067,60 @@ function linkify(s: string): string {
   // URL regex (simple)
   const urlRe = /(https?:\/\/[^\s<]+)/gi
   return withBreaks.replace(urlRe, m => `<a href="${m}" rel="noopener nofollow">${m}</a>`)
+}
+
+// Detect image URLs within a text string
+function extractImageUrlsFromText(s: string): string[] {
+  if (!s)
+    return []
+  const urls: string[] = []
+  const re = /(https?:\/\/[^\s<>'"()]+\.(?:png|jpg|jpeg|gif|webp|bmp|svg))/gi
+  for (let m = re.exec(s); m != null; m = re.exec(s)) {
+    urls.push(m[1])
+    if (urls.length >= 6)
+      break
+  }
+  return urls
+}
+
+function extractImageUrls(c: any): string[] {
+  const urls = new Set<string>()
+  const push = (u: any) => {
+    if (!u)
+      return
+    const s = String(u)
+    if (/^https?:\/\/.+\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?.*)?$/i.test(s))
+      urls.add(s)
+  }
+  // Common fields that might contain images
+  const fields = ['image', 'images', 'media', 'attachments', 'files']
+  for (const f of fields) {
+    const v = (c as any)?.[f]
+    if (!v)
+      continue
+    if (typeof v === 'string') {
+      push(v)
+    }
+    else if (Array.isArray(v)) {
+      for (const el of v) {
+        if (typeof el === 'string')
+          push(el)
+        else if (el && typeof el === 'object')
+          push((el as any).url || (el as any).src || (el as any).link)
+      }
+    }
+    else if (typeof v === 'object') {
+      push((v as any).url || (v as any).src || (v as any).link)
+    }
+  }
+  // Also parse from comment text
+  try {
+    const txt = getCommentText(c)
+    for (const u of extractImageUrlsFromText(txt))
+      urls.add(u)
+  }
+  catch {}
+  return Array.from(urls).slice(0, 6)
 }
 
 const descCaption = computed(() => getCaption(currentItem.value))
@@ -1911,6 +2142,63 @@ watch(visibleIndices, (idxs) => {
                     {{ commentNameFor(c) }}
                   </div>
                   <div class="comment-text" @click="onDescHtmlClick" v-html="linkify(getCommentText(c))" />
+                  <div v-if="extractImageUrls(c).length" class="comment-media">
+                    <a
+                      v-for="(u, ui) in extractImageUrls(c)"
+                      :key="ui"
+                      class="comment-media-item"
+                      :href="u"
+                      rel="noopener"
+                      @click.prevent="handleExternalLink(u, $event)"
+                    >
+                      <img :src="u" loading="lazy" decoding="async" alt="attachment">
+                    </a>
+                  </div>
+                  <div v-if="getReplyCount(c) > 0 || hasInlineReplies(c)" class="replies-toggle-row">
+                    <button class="replies-toggle-btn" @click="toggleRepliesForComment(c)">
+                      <template v-if="isRepliesOpen(c)">
+                        Hide replies
+                      </template>
+                      <template v-else>
+                        View replies<span v-if="getReplyCount(c) > 0"> ({{ getReplyCount(c) }})</span>
+                      </template>
+                    </button>
+                  </div>
+                  <template v-if="isRepliesOpen(c)">
+                    <ul class="replies-list">
+                      <li v-for="(rc, ri) in repliesListFor(c)" :key="ri" class="reply-item">
+                        <div class="comment-row">
+                          <div class="avatar comment-avatar" :style="{ backgroundImage: commentAvatarFor(rc) ? `url('${commentAvatarFor(rc)}')` : '' }">
+                            <span v-if="!commentAvatarFor(rc)" class="avatar-fallback">👤</span>
+                          </div>
+                          <div class="comment-main">
+                            <div class="comment-author">
+                              {{ commentNameFor(rc) }}
+                            </div>
+                            <div class="comment-text" @click="onDescHtmlClick" v-html="linkify(getCommentText(rc))" />
+                            <div v-if="extractImageUrls(rc).length" class="comment-media">
+                              <a
+                                v-for="(u, ui) in extractImageUrls(rc)"
+                                :key="ui"
+                                class="comment-media-item"
+                                :href="u"
+                                rel="noopener"
+                                @click.prevent="handleExternalLink(u, $event)"
+                              >
+                                <img :src="u" loading="lazy" decoding="async" alt="attachment">
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                      <li v-if="!hasInlineReplies(c) && repliesLoading(c)" class="reply-loading">
+                        <LoadingSpinner :size="28" aria-label="Loading replies" />
+                      </li>
+                      <li v-if="!hasInlineReplies(c) && repliesError(c)" class="reply-error text-red">
+                        {{ repliesError(c) }}
+                      </li>
+                    </ul>
+                  </template>
                 </div>
               </div>
             </li>
