@@ -1159,7 +1159,6 @@ const isPaging = ref(false)
 let lastNavAt = 0
 let touchStartY = 0
 let touchStartTime = 0
-let touchStartX = 0
 
 // Pager-mode window derived from current index
 const visibleStart = computed(() => Math.max(0, currentIndex.value - 1))
@@ -1463,7 +1462,6 @@ function onTouchStart(ev: TouchEvent) {
   if (ev.touches.length > 0) {
     touchStartY = ev.touches[0].clientY
     touchStartTime = performance.now()
-    touchStartX = ev.touches[0].clientX
   }
 }
 function onTouchEnd(ev: TouchEvent) {
@@ -1471,17 +1469,9 @@ function onTouchEnd(ev: TouchEvent) {
   if (!touch)
     return
   const dy = touch.clientY - touchStartY
-  const dx = touch.clientX - touchStartX
   const ady = Math.abs(dy)
-  const adx = Math.abs(dx)
   const dt = performance.now() - touchStartTime
-  // Horizontal swipe: left-to-right opens Settings
-  if (adx > 50 && adx > ady && dt < 800) {
-    if (dx > 0) {
-      openSettingsDrawer()
-      return
-    }
-  }
+  // Horizontal swipe to open Settings disabled; use the Settings button instead
   // Vertical swipe: navigate between videos
   if (ady > 50 && dt < 800) {
     if (dy < 0)
@@ -1795,6 +1785,9 @@ watch(visibleIndices, (idxs) => {
           </button>
           <button class="open-post-btn" aria-label="Open full post" title="Open full post" @click.stop="openCommentsInHost">
             🗖
+          </button>
+          <button class="settings-btn" aria-label="Open settings" title="Open settings" @click.stop="openSettingsDrawer">
+            ⚙️
           </button>
         </div>
       </section>
@@ -2260,6 +2253,19 @@ watch(visibleIndices, (idxs) => {
   justify-content: center;
 }
 .open-post-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.settings-btn {
   position: relative;
   width: 44px;
   height: 44px;

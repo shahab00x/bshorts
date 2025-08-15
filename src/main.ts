@@ -14,9 +14,9 @@ import { SdkService } from './composables/sdkService'
 (async () => {
   try {
     await SdkService.init()
-    // Request required permissions once during startup to avoid per-click prompts
+    // Request minimal permissions on startup. 'sign' is requested on-demand when needed.
     try {
-      await SdkService.checkAndRequestPermissions(['account', 'sign'])
+      await SdkService.checkAndRequestPermissions(['account'])
     }
     catch (permErr) {
       console.warn('Permission request at startup failed (will retry on demand):', permErr)
