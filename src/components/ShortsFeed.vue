@@ -821,6 +821,32 @@ function getReplyCount(c: any): number {
   return 0
 }
 
+// Returns any known replies count for a comment: explicit field, inline array length, or fetched cache length
+function getKnownReplyCount(c: any): number {
+  const n = getReplyCount(c)
+  if (n > 0)
+    return n
+  // If not inline and we have fetched replies, use cached length
+  if (!hasInlineReplies(c)) {
+    const h = currentVideoHash.value
+    const id = resolveCommentId(c)
+    if (h && id) {
+      const rs = commentsByHash.value[h]?.repliesById?.[id]
+      const len = rs?.items?.length || 0
+      if (len > 0)
+        return len
+    }
+  }
+  return 0
+}
+
+// Show toggle if replies are open (to allow hiding) or if we know there are replies to show
+function shouldShowRepliesToggle(c: any): boolean {
+  if (isRepliesOpen(c))
+    return true
+  return getKnownReplyCount(c) > 0
+}
+
 async function fetchRepliesFor(hash: string, parentId: string): Promise<any[]> {
   const st = ensureCommentState(hash)
   if (!st.repliesById[parentId])
@@ -1143,6 +1169,14 @@ const commentsCount = computed(() => {
   const c = (currentItem.value as any)?.comments ?? (currentItem.value as any)?.rawPost?.comments
   const n = Number(c)
   return Number.isFinite(n) && n >= 0 ? n : 0
+})
+
+// Header should reflect actual loaded count when available, otherwise fallback to metadata count
+const commentsHeaderCount = computed(() => {
+  const loaded = currentComments.value?.items?.length ?? 0
+  if (loaded > 0)
+    return loaded
+  return commentsCount.value
 })
 
 // Dynamic comments drawer height: measure content and cap at 2/3 viewport
@@ -2104,7 +2138,7 @@ watch(visibleIndices, (idxs) => {
           @touchmove="onDrawerTouchMove($event)"
           @touchend="onDrawerTouchEnd"
         >
-          <h3>Comments</h3>
+          <h3>Comments<span v-if="commentsHeaderCount > 0">({{ commentsHeaderCount }})</span></h3>
         </div>
         <div
           ref="commentsBodyEl"
@@ -2164,13 +2198,13 @@ watch(visibleIndices, (idxs) => {
                       <img :src="u" loading="lazy" decoding="async" alt="attachment">
                     </a>
                   </div>
-                  <div v-if="hasInlineReplies(c) || getReplyCount(c) > 0 || !!resolveCommentId(c)" class="replies-toggle-row">
+                  <div v-if="shouldShowRepliesToggle(c)" class="replies-toggle-row">
                     <button class="replies-toggle-btn" @click="toggleRepliesForComment(c)">
                       <template v-if="isRepliesOpen(c)">
                         Hide replies
                       </template>
                       <template v-else>
-                        View replies<span v-if="getReplyCount(c) > 0"> ({{ getReplyCount(c) }})</span>
+                        View replies<span v-if="getKnownReplyCount(c) > 0">({{ getKnownReplyCount(c) }})</span>
                       </template>
                     </button>
                   </div>
