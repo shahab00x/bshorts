@@ -1787,7 +1787,10 @@ watch(visibleIndices, (idxs) => {
             🗖
           </button>
           <button class="settings-btn" aria-label="Open settings" title="Open settings" @click.stop="openSettingsDrawer">
-            ⚙️
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11.049 2.927c.3-1.14 1.975-1.14 2.275 0a1.724 1.724 0 002.573 1.066c.99-.57 2.233.386 1.946 1.47a1.724 1.724 0 001.001 2.088c1.09.45 1.09 2.05 0 2.5a1.724 1.724 0 00-1.001 2.088c.287 1.084-.956 2.04-1.946 1.47a1.724 1.724 0 00-2.573 1.066c-.3 1.14-1.975 1.14-2.275 0a1.724 1.724 0 00-2.573-1.066c-.99.57-2.233-.386-1.946-1.47a1.724 1.724 0 00-1.001-2.088c-1.09-.45-1.09-2.05 0-2.5.587-.242 1.004-.74 1.001-2.088-.287-1.084.956-2.04 1.946-1.47.626.361 1.406.182 2.573-1.066z" />
+              <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
           </button>
         </div>
       </section>
