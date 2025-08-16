@@ -3009,6 +3009,7 @@ watch(visibleIndices, (idxs) => {
   border-radius: 6px;
   overflow: hidden;
   cursor: pointer;
+  aspect-ratio: 1 / 1; /* ensure tiles have height so images are visible */
 }
 .comment-media-item img {
   display: block;
