@@ -5,7 +5,7 @@ import HlsVideo from '~/components/HlsVideo.vue'
 import PerfOverlay from '~/components/PerfOverlay.vue'
 import LoadingSpinner from '~/components/LoadingSpinner.vue'
 import { appConfig } from '~/config'
-import { SdkService } from '~/composables'
+import { SdkService, followAddress } from '~/composables'
 
 interface PeertubeInfo { hlsUrl: string, apiUrl?: string }
 
@@ -73,7 +73,6 @@ const commentsByHash = ref<Record<string, CommentState>>({})
 const avatarsByAddress = ref<Record<string, string>>({})
 // Names cache (by address)
 const namesByAddress = ref<Record<string, string>>({})
-
 // Reputation caches
 const reputationsByAddress = ref<Record<string, number>>({})
 const addressByHash = ref<Record<string, string>>({})
@@ -331,12 +330,11 @@ async function followAuthor(it: any) {
     followErrorByAddress.value[resolvedAddr] = null
     followLoadingByAddress.value[resolvedAddr] = true
 
-    // Prefer signed subscribe if the host exposes action(); otherwise deep-link to channel UI
+    // Prefer signed subscribe via helper; falls back to channel UI when unsupported or on error
     if (SdkService.supportsAction()) {
       try {
-        await SdkService.checkAndRequestPermissions(['account', 'sign'])
         console.log('Subscribing to', resolvedAddr)
-        await SdkService.action('subscribe', { address: resolvedAddr, private: false })
+        await followAddress(resolvedAddr, { private: false })
         followedByAddress.value[resolvedAddr] = true
         return
       }

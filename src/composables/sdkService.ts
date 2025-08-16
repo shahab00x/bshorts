@@ -346,4 +346,39 @@ export class SdkService {
       throw error
     }
   }
+
+  /**
+   * Retrieves the current user's primary account address (actor) from the host.
+   * Returns null if unavailable.
+   */
+  public static async getAccountAddress(): Promise<string | null> {
+    this.ensureInitialized()
+    try {
+      // Cast to any to access get.account()
+      const sdkAny = this.sdk as any
+      if (!sdkAny?.get?.account || typeof sdkAny.get.account !== 'function')
+        return null
+
+      const info = await sdkAny.get.account()
+      // Try common shapes
+      const direct = info?.address || info?.a || info?.adr || info?.addr
+      if (typeof direct === 'string' && direct)
+        return direct
+
+      // Nested possibilities
+      if (info && typeof info === 'object') {
+        const user = (info as any).user || (info as any).account || (info as any).profile
+        const nested = user?.address || user?.a || user?.adr
+        if (typeof nested === 'string' && nested)
+          return nested
+      }
+
+      return null
+    }
+    catch (error) {
+      if (import.meta?.env?.VITE_SDK_DEBUG)
+        console.warn('getAccountAddress() failed:', error)
+      return null
+    }
+  }
 }
