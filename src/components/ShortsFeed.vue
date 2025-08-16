@@ -1799,6 +1799,68 @@ function onHashtagClick(tag: string, ev?: Event) {
   void handleExternalLink(url, ev)
 }
 
+// ----- Simple in-app image viewer (lightbox) for comment attachments -----
+const imageViewerOpen = ref(false)
+const imageViewerItems = ref<string[]>([])
+const imageViewerIndex = ref(0)
+const wasPlayingBeforeImageViewer = ref(false)
+
+function openCommentImages(c: any, startIdx = 0) {
+  try {
+    const urls = extractImageUrls(c)
+    if (!urls || urls.length === 0)
+      return
+    wasPlayingBeforeImageViewer.value = isCurrentVideoPlaying()
+    pauseCurrentVideo()
+    imageViewerItems.value = urls
+    imageViewerIndex.value = Math.max(0, Math.min(startIdx, urls.length - 1))
+    imageViewerOpen.value = true
+    window.addEventListener('keydown', onImageViewerKeyDown)
+  }
+  catch (e) {
+    console.warn('Failed to open image viewer:', e)
+  }
+}
+
+function closeImageViewer() {
+  imageViewerOpen.value = false
+  imageViewerItems.value = []
+  imageViewerIndex.value = 0
+  window.removeEventListener('keydown', onImageViewerKeyDown)
+  if (wasPlayingBeforeImageViewer.value) {
+    resumeCurrentVideo()
+    wasPlayingBeforeImageViewer.value = false
+  }
+}
+
+function nextImage() {
+  const n = imageViewerItems.value.length
+  if (n > 1)
+    imageViewerIndex.value = (imageViewerIndex.value + 1) % n
+}
+function prevImage() {
+  const n = imageViewerItems.value.length
+  if (n > 1)
+    imageViewerIndex.value = (imageViewerIndex.value - 1 + n) % n
+}
+
+function onImageViewerKeyDown(ev: KeyboardEvent) {
+  if (!imageViewerOpen.value)
+    return
+  if (ev.key === 'Escape') {
+    ev.preventDefault()
+    closeImageViewer()
+  }
+  else if (ev.key === 'ArrowRight') {
+    ev.preventDefault()
+    nextImage()
+  }
+  else if (ev.key === 'ArrowLeft') {
+    ev.preventDefault()
+    prevImage()
+  }
+}
+
 onMounted(() => {
   void loadPlaylist()
   // Resume playback if we paused due to opening the host UI and the app regains focus/visibility
@@ -2102,12 +2164,13 @@ watch(visibleIndices, (idxs) => {
           @touchmove="onDrawerTouchMove($event)"
           @touchend="onDrawerTouchEnd"
         >
-          <template v-if="descCaption">
-            <h4 class="desc-title">
-              {{ descCaption }}
-              <span v-if="peerMetaString(currentItem)" class="desc-meta"> · {{ peerMetaString(currentItem) }}</span>
-            </h4>
-          </template>
+          <div
+            v-if="descCaption"
+            class="desc-title"
+          >
+            {{ descCaption }}
+            <span v-if="peerMetaString(currentItem)" class="desc-meta"> · {{ peerMetaString(currentItem) }}</span>
+          </div>
           <div class="desc-text" @click="onDescHtmlClick" v-html="descHtml" />
           <div v-if="descTags.length" class="hashtags-row">
             <a
@@ -2190,16 +2253,16 @@ watch(visibleIndices, (idxs) => {
                   </div>
                   <div class="comment-text" @click="onDescHtmlClick" v-html="linkify(getCommentText(c))" />
                   <div v-if="extractImageUrls(c).length" class="comment-media">
-                    <a
+                    <button
                       v-for="(u, ui) in extractImageUrls(c)"
                       :key="ui"
+                      type="button"
                       class="comment-media-item"
-                      :href="u"
-                      rel="noopener"
-                      @click.prevent="handleExternalLink(u, $event)"
+                      :aria-label="`View image ${ui + 1}`"
+                      @click.prevent.stop="openCommentImages(c, ui)"
                     >
                       <img :src="u" loading="lazy" decoding="async" alt="attachment">
-                    </a>
+                    </button>
                   </div>
                   <div v-if="shouldShowRepliesToggle(c)" class="replies-toggle-row">
                     <button class="replies-toggle-btn" @click="toggleRepliesForComment(c)">
@@ -2224,16 +2287,16 @@ watch(visibleIndices, (idxs) => {
                             </div>
                             <div class="comment-text" @click="onDescHtmlClick" v-html="linkify(getCommentText(rc))" />
                             <div v-if="extractImageUrls(rc).length" class="comment-media">
-                              <a
+                              <button
                                 v-for="(u, ui) in extractImageUrls(rc)"
                                 :key="ui"
+                                type="button"
                                 class="comment-media-item"
-                                :href="u"
-                                rel="noopener"
-                                @click.prevent="handleExternalLink(u, $event)"
+                                :aria-label="`View image ${ui + 1}`"
+                                @click.prevent.stop="openCommentImages(rc, ui)"
                               >
                                 <img :src="u" loading="lazy" decoding="async" alt="attachment">
-                              </a>
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -2288,6 +2351,53 @@ watch(visibleIndices, (idxs) => {
         </div>
       </div>
     </div>
+
+    <!-- Image Viewer Overlay -->
+    <template v-if="imageViewerOpen">
+      <div class="image-viewer-backdrop" @click.self="closeImageViewer">
+        <div class="image-viewer-chrome">
+          <button class="iv-close" aria-label="Close" @click.stop="closeImageViewer">
+            ✕
+          </button>
+          <div class="iv-counter">
+            {{ imageViewerIndex + 1 }} / {{ imageViewerItems.length }}
+          </div>
+          <button
+            v-if="imageViewerItems.length > 1"
+            class="iv-prev"
+            aria-label="Previous"
+            @click.stop="prevImage"
+          >
+            ‹
+          </button>
+          <button
+            v-if="imageViewerItems.length > 1"
+            class="iv-next"
+            aria-label="Next"
+            @click.stop="nextImage"
+          >
+            ›
+          </button>
+          <a
+            v-if="imageViewerItems[imageViewerIndex]"
+            class="iv-open"
+            :href="imageViewerItems[imageViewerIndex]"
+            rel="noopener"
+            title="Open externally"
+            @click.prevent.stop="handleExternalLink(imageViewerItems[imageViewerIndex], $event)"
+          >⤴</a>
+        </div>
+        <div class="image-viewer-stage" @click.stop>
+          <img
+            :src="imageViewerItems[imageViewerIndex]"
+            class="image-viewer-img"
+            alt="image"
+            loading="eager"
+            decoding="async"
+          >
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -2882,5 +2992,115 @@ watch(visibleIndices, (idxs) => {
   border: 1px solid rgba(255, 255, 255, 0.35);
   background: rgba(0, 0, 0, 0.4);
   color: #fff;
+}
+
+/* Comment media grid */
+.comment-media {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+.comment-media-item {
+  position: relative;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.comment-media-item img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Image viewer overlay */
+.image-viewer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.image-viewer-stage {
+  max-width: 96vw;
+  max-height: 92vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.image-viewer-img {
+  max-width: 96vw;
+  max-height: 92vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.image-viewer-chrome {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.image-viewer-chrome > * {
+  pointer-events: auto;
+}
+.iv-close,
+.iv-prev,
+.iv-next,
+.iv-open {
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 16px;
+}
+.iv-prev,
+.iv-next {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.iv-prev {
+  left: 12px;
+}
+.iv-next {
+  right: 12px;
+}
+.iv-open {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  text-decoration: none;
+}
+.iv-close {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+}
+.iv-counter {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 13px;
 }
 </style>
