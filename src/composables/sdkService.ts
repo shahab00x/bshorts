@@ -255,6 +255,33 @@ export class SdkService {
   }
 
   /**
+   * Returns the current user's account address from the host SDK.
+   * Requires the 'account' permission to be granted.
+   */
+  public static async getAccountAddress(): Promise<string> {
+    this.ensureInitialized()
+    try {
+      const sdkAny = this.sdk as any
+      const fn = sdkAny?.get?.account
+      if (typeof fn !== 'function')
+        throw new Error('Host SDK does not support get.account')
+
+      if (import.meta?.env?.VITE_SDK_DEBUG)
+        console.log('[SDK DEBUG] fetching account address via get.account')
+
+      const res = await fn()
+      const addr: unknown = res?.address ?? res?.adr ?? res?.a
+      if (typeof addr !== 'string' || !addr)
+        throw new Error('Account address is empty')
+      return addr
+    }
+    catch (error) {
+      console.error('Error getting account address:', error)
+      throw error
+    }
+  }
+
+  /**
    * Opens the Bastyon channel UI for the given address so the user can follow there.
    * Useful as a fallback when signed actions are unavailable.
    */

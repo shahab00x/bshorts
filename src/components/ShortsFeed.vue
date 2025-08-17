@@ -331,22 +331,66 @@ async function followAuthor(it: any) {
     followErrorByAddress.value[resolvedAddr] = null
     followLoadingByAddress.value[resolvedAddr] = true
 
-    // Prefer signed subscribe if the host exposes action(); otherwise deep-link to channel UI
-    if (SdkService.supportsAction()) {
-      try {
-        await SdkService.checkAndRequestPermissions(['account', 'sign'])
-        console.log('Subscribing to', resolvedAddr)
-        await SdkService.action('subscribe', { address: resolvedAddr, private: false })
-        followedByAddress.value[resolvedAddr] = true
-        return
+    // New flow: build unsigned subscribe tx locally, sign and broadcast via RPC
+    try {
+      await SdkService.checkAndRequestPermissions(['account', 'sign'])
+
+      // Fetch current user's address for inputs/change
+      const spendAddress = await SdkService.getAccountAddress()
+
+      // Prepare a minimal rpc adapter compatible with the tx builder expectations
+      const rpc = {
+        call: async (method: string, params?: any) => {
+          const arr = Array.isArray(params) ? params : (params !== undefined ? [params] : [])
+          return await SdkService.rpc(method, arr)
+        },
       }
-      catch (err) {
-        console.warn('Signed subscribe failed, falling back to channel UI:', err)
-        // Fall through to deep-link UI
-      }
+
+      // Dynamic import of local CommonJS builder
+      const pntx: any = await import('pntx')
+      const createUnsignedSubscribeTxFromAddress = pntx.createUnsignedSubscribeTxFromAddress || pntx?.default?.createUnsignedSubscribeTxFromAddress
+      if (typeof createUnsignedSubscribeTxFromAddress !== 'function')
+        throw new Error('createUnsignedSubscribeTxFromAddress not available')
+
+      if (import.meta?.env?.VITE_SDK_DEBUG)
+        console.debug('[follow] building unsigned subscribe tx', { to: resolvedAddr, from: spendAddress })
+
+      const unsignedRes = await createUnsignedSubscribeTxFromAddress({
+        rpc,
+        spendAddress,
+        changeAddress: spendAddress,
+        addressToFollow: resolvedAddr,
+      })
+
+      const unsignedHex: string = unsignedRes?.hex
+      if (typeof unsignedHex !== 'string' || !unsignedHex)
+        throw new Error('Failed to build unsigned transaction')
+
+      if (import.meta?.env?.VITE_SDK_DEBUG)
+        console.debug('[follow] signing unsigned tx')
+
+      const signRes: any = await SdkService.rpc('sign', [unsignedHex])
+      const signedHex: string = (signRes && (signRes.hex || signRes.signed || signRes.result)) || (typeof signRes === 'string' ? signRes : '')
+      if (typeof signedHex !== 'string' || !signedHex)
+        throw new Error('Signing failed')
+
+      if (import.meta?.env?.VITE_SDK_DEBUG)
+        console.debug('[follow] broadcasting signed tx')
+
+      const sendRes: any = await SdkService.rpc('sendrawtransaction', [signedHex])
+      if (import.meta?.env?.VITE_SDK_DEBUG)
+        console.debug('[follow] broadcast result', sendRes)
+
+      // Success
+      followedByAddress.value[resolvedAddr] = true
+      return
+    }
+    catch (err) {
+      console.warn('Subscribe via tx builder failed, falling back to channel UI:', err)
+      // Fall through to deep-link UI
     }
 
-    // Open the author's channel so the user can follow from native UI
+    // Fallback: open the author's channel so the user can follow from native UI
     await SdkService.openChannel(resolvedAddr)
   }
   catch (e: any) {

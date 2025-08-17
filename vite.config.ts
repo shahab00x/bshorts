@@ -14,6 +14,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '~/': `${path.resolve(__dirname, 'src')}/`,
+      // Local tx builder library (CommonJS) used by the app
+      'pntx': path.resolve(__dirname, '../pocketnet_transaction_builder/index.js'),
     },
   },
   plugins: [
@@ -60,7 +62,15 @@ export default defineConfig({
     // see uno.config.ts for config
     UnoCSS(),
   ],
-  server: {},
+  server: {
+    fs: {
+      // allow importing the sibling local library folder
+      allow: [
+        path.resolve(__dirname, '..'),
+        __dirname,
+      ],
+    },
+  },
   // https://github.com/vitest-dev/vitest
   test: {
     environment: 'jsdom',
