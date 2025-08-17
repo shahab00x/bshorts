@@ -9,6 +9,8 @@ import UnoCSS from 'unocss/vite'
 import VueMacros from 'unplugin-vue-macros/vite'
 import VueRouter from 'unplugin-vue-router/vite'
 import { VueRouterAutoImports } from 'unplugin-vue-router'
+import inject from '@rollup/plugin-inject'
+import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill'
 
 export default defineConfig({
   resolve: {
@@ -16,6 +18,18 @@ export default defineConfig({
       '~/': `${path.resolve(__dirname, 'src')}/`,
       // Vendored tx builder library (CommonJS) included in this repo
       'pntx': path.resolve(__dirname, 'src/vendor/pntx/index.js'),
+      // Node core polyfills for browser usage (needed by bitcoinjs-lib deps)
+      'buffer': 'buffer',
+      'node:buffer': 'buffer',
+      'stream': 'stream-browserify',
+      'node:stream': 'stream-browserify',
+      'util': 'util',
+      'node:util': 'util',
+      'events': 'events',
+      'node:events': 'events',
+      'process': 'process/browser',
+      'crypto': 'crypto-browserify',
+      'node:crypto': 'crypto-browserify',
     },
   },
   plugins: [
@@ -61,12 +75,45 @@ export default defineConfig({
     // https://github.com/antfu/unocss
     // see uno.config.ts for config
     UnoCSS(),
+
+    // Provide globals for node polyfills in dependencies
+    inject({
+      Buffer: ['buffer', 'Buffer'],
+      process: 'process',
+    }),
   ],
   server: {
     fs: {
       // No need to allow parent directories now that the builder is vendored
       allow: [
         __dirname,
+      ],
+    },
+  },
+  // Provide globals expected by some Node libs
+  define: {
+    'process.env': {},
+    'global': 'globalThis',
+  },
+  optimizeDeps: {
+    include: [
+      'buffer',
+      'events',
+      'util',
+      'stream-browserify',
+      'process',
+      'crypto-browserify',
+    ],
+    esbuildOptions: {
+      define: {
+        'global': 'globalThis',
+        'process.env': '{}',
+      },
+      plugins: [
+        NodeGlobalsPolyfillPlugin({
+          buffer: true,
+          process: true,
+        }),
       ],
     },
   },

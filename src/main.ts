@@ -9,8 +9,6 @@ import { SdkService } from './composables/sdkService'
 
 // Ensure the Bastyon SDK is fully initialized before mounting the app
 
-;
-
 (async () => {
   try {
     await SdkService.init()
