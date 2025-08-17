@@ -4,7 +4,7 @@
   "description": "Video player for Bastyon short videos under 2.5 minutes. Swipe right for settings.",
   "author": "PXN76kJG5sCGTwMpRfXH5oqkDzJQKNsYk4",
   "start_url": "index.html",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "scope": "apptest.bastyon.ir",
   "permissions": [
     "sign",

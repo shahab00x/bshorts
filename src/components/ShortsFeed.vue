@@ -2096,7 +2096,7 @@ watch(visibleIndices, (idxs) => {
                 {{ vi.item.uploader || 'Unknown' }}
               </div>
               <button
-                v-if="false"
+                v-if="appConfig.showFollowButton"
                 class="follow-btn"
                 :class="{ following: isAuthorFollowed(vi.item), loading: isFollowLoading(vi.item) }"
                 :disabled="isFollowLoading(vi.item) || isAuthorFollowed(vi.item)"
