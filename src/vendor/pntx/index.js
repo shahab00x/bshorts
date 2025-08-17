@@ -73,7 +73,7 @@ function buildSubscribeOpReturn(addressToFollow) {
  * @param {number} [params.timeDifference] optional time offset used when delayedNtime is set
  * @param {number} [params.delayedNtime] optional locktime
  * @param {bitcoin.networks.Network} [params.network] network
- * @returns {{hex:string, txid:string, vsize:number, inputs:any[], outputs:any[]}}
+ * @returns {{hex:string, txid:string, vsize:number, inputs:any[], outputs:any[]}} unsigned tx summary including hex, pre-sign txid, virtual size, selected inputs, and outputs
  */
 function createUnsignedSubscribeTx({
   utxos,
@@ -160,7 +160,7 @@ export {
  * @param {number} [params.timeDifference]
  * @param {number} [params.delayedNtime]
  * @param {any} [params.network]
- * @returns {Promise<ReturnType<typeof createUnsignedSubscribeTx>>}
+ * @returns {Promise<ReturnType<typeof createUnsignedSubscribeTx>>} promise resolving to the unsigned transaction summary produced by createUnsignedSubscribeTx
  */
 async function createUnsignedSubscribeTxFromAddress({
   rpc,
