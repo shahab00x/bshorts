@@ -14,8 +14,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '~/': `${path.resolve(__dirname, 'src')}/`,
-      // Local tx builder library (CommonJS) used by the app
-      'pntx': path.resolve(__dirname, '../pocketnet_transaction_builder/index.js'),
+      // Vendored tx builder library (CommonJS) included in this repo
+      'pntx': path.resolve(__dirname, 'src/vendor/pntx/index.js'),
     },
   },
   plugins: [
@@ -64,9 +64,8 @@ export default defineConfig({
   ],
   server: {
     fs: {
-      // allow importing the sibling local library folder
+      // No need to allow parent directories now that the builder is vendored
       allow: [
-        path.resolve(__dirname, '..'),
         __dirname,
       ],
     },

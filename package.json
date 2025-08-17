@@ -20,6 +20,8 @@
   },
   "dependencies": {
     "@vueuse/core": "^10.9.0",
+    "bitcoinjs-lib": "^5.2.0",
+    "buffer": "^6.0.3",
     "hls.js": "^1.5.8",
     "vue": "^3.4.27",
     "vue-router": "^4.3.2"
