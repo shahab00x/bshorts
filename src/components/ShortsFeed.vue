@@ -390,7 +390,23 @@ async function followAuthor(it: any) {
       // Fall through to deep-link UI
     }
 
-    // Fallback: open the author's channel so the user can follow from native UI
+    // Next fallback: use host action() if available (lets Bastyon wallet perform the subscribe)
+    try {
+      if (SdkService.supportsAction()) {
+        if (import.meta?.env?.VITE_SDK_DEBUG)
+          console.debug('[follow] using host action(subscribe)')
+        await SdkService.action('subscribe', { address: resolvedAddr })
+        // Success
+        followedByAddress.value[resolvedAddr] = true
+        return
+      }
+    }
+    catch (e) {
+      console.warn('Host action(subscribe) failed:', e)
+      // continue to final fallback
+    }
+
+    // Final fallback: open the author's channel so the user can follow from native UI
     await SdkService.openChannel(resolvedAddr)
   }
   catch (e: any) {

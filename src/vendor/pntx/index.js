@@ -148,9 +148,9 @@ export {
 
 /**
  * Convenience helper that gathers UTXOs via RPC and then builds the unsigned subscribe tx.
- * Requires RPC methods compatible with Bastyon docs:
- *   - TxUnspent { address }
- *   - GetTxOut { txid, n, include_mempool }
+ * Requires RPC methods compatible with backend:
+ *   - TxUnspent { address } (or listunspent fallback)
+ *   - gettxout (lowercase) [txid, n, include_mempool] with legacy GetTxOut fallback
  * Proof methods are not required.
  *
  * @param {object} params
@@ -213,25 +213,25 @@ async function createUnsignedSubscribeTxFromAddress({
   if (!Array.isArray(utxos) || utxos.length === 0)
     throw new Error('No UTXOs returned for spendAddress')
 
-  // 2) Ensure scriptPubKey.hex for each UTXO (fetch via GetTxOut if missing)
+  // 2) Ensure scriptPubKey.hex for each UTXO (fetch via gettxout if missing)
   const prepared = []
   // Helper to fetch scriptPubKey hex with multiple fallbacks
   const fetchScriptHex = async (txid, vout) => {
-    // Try Bastyon-style GetTxOut with object params (n)
+    // Prefer bitcoind-style lowercase gettxout with array params (core-compatible)
     try {
       if (DEBUG)
-        console.debug('[pntx] RPC GetTxOut (object,n)')
-      const txout = await rpc.call('GetTxOut', { txid, n: vout, include_mempool: true })
+        console.debug('[pntx] RPC gettxout (array)')
+      const txout = await rpc.call('gettxout', [txid, vout, true])
       const txoutRes = txout && txout.result ? txout.result : txout
-      const hex = txoutRes?.scriptPubKey?.hex
+      const hex = txoutRes?.scriptPubKey?.hex || txoutRes?.scriptPubKey
       if (hex)
         return hex
     }
     catch {}
-    // Try Bastyon-style GetTxOut with object params (vout)
+    // Legacy Bastyon-style GetTxOut with object params (vout)
     try {
       if (DEBUG)
-        console.debug('[pntx] RPC GetTxOut (object,vout)')
+        console.debug('[pntx] RPC GetTxOut (object,vout) fallback')
       const txout = await rpc.call('GetTxOut', { txid, vout, include_mempool: true })
       const txoutRes = txout && txout.result ? txout.result : txout
       const hex = txoutRes?.scriptPubKey?.hex
@@ -239,13 +239,13 @@ async function createUnsignedSubscribeTxFromAddress({
         return hex
     }
     catch {}
-    // Try bitcoind-style lowercase gettxout with array params
+    // Legacy Bastyon-style GetTxOut with object params (n)
     try {
       if (DEBUG)
-        console.debug('[pntx] RPC gettxout (array)')
-      const txout = await rpc.call('gettxout', [txid, vout, true])
+        console.debug('[pntx] RPC GetTxOut (object,n) fallback')
+      const txout = await rpc.call('GetTxOut', { txid, n: vout, include_mempool: true })
       const txoutRes = txout && txout.result ? txout.result : txout
-      const hex = txoutRes?.scriptPubKey?.hex || txoutRes?.scriptPubKey
+      const hex = txoutRes?.scriptPubKey?.hex
       if (hex)
         return hex
     }
