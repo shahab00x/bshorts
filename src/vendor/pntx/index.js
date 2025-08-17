@@ -10,6 +10,8 @@ This mirrors the logic validated in build_unsigned_subscribe_tx.js and Bastyon G
 
 import { Buffer } from 'node:buffer'
 import * as bitcoin from 'bitcoinjs-lib'
+// Enable verbose logs when app is started with VITE_SDK_DEBUG=true
+const DEBUG = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SDK_DEBUG
 
 // Constants from ActionOptions in actions.js
 const AMOUNT_C = 100000000 // satoshis per coin
@@ -181,10 +183,28 @@ async function createUnsignedSubscribeTxFromAddress({
   let utxos
   try {
     // Prefer object params per Bastyon docs
-    const res = await rpc.call('TxUnspent', { address: spendAddress })
+    if (DEBUG)
+      console.debug('[pntx] RPC TxUnspent (object)')
+    let res = await rpc.call('TxUnspent', { address: spendAddress })
     utxos = Array.isArray(res) ? res : (res && Array.isArray(res.result) ? res.result : [])
+    // Some backends expect array params
+    if ((!utxos || utxos.length === 0)) {
+      if (DEBUG)
+        console.debug('[pntx] RPC TxUnspent (array) fallback')
+      res = await rpc.call('TxUnspent', [spendAddress])
+      utxos = Array.isArray(res) ? res : (res && Array.isArray(res.result) ? res.result : [])
+      // If still empty, try listunspent proactively
+      if ((!utxos || utxos.length === 0)) {
+        if (DEBUG)
+          console.debug('[pntx] RPC listunspent (array) fallback due to empty TxUnspent')
+        const lr = await rpc.call('listunspent', [0, 9999999, [spendAddress]])
+        utxos = Array.isArray(lr) ? lr : (lr && Array.isArray(lr.result) ? lr.result : [])
+      }
+    }
   }
   catch (e) {
+    if (DEBUG)
+      console.warn('[pntx] TxUnspent failed, trying listunspent:', e)
     // Optional fallback to Bitcoin Core style listunspent
     const res = await rpc.call('listunspent', [0, 9999999, [spendAddress]])
     utxos = Array.isArray(res) ? res : (res && Array.isArray(res.result) ? res.result : [])
@@ -195,6 +215,44 @@ async function createUnsignedSubscribeTxFromAddress({
 
   // 2) Ensure scriptPubKey.hex for each UTXO (fetch via GetTxOut if missing)
   const prepared = []
+  // Helper to fetch scriptPubKey hex with multiple fallbacks
+  const fetchScriptHex = async (txid, vout) => {
+    // Try Bastyon-style GetTxOut with object params (n)
+    try {
+      if (DEBUG)
+        console.debug('[pntx] RPC GetTxOut (object,n)')
+      const txout = await rpc.call('GetTxOut', { txid, n: vout, include_mempool: true })
+      const txoutRes = txout && txout.result ? txout.result : txout
+      const hex = txoutRes?.scriptPubKey?.hex
+      if (hex)
+        return hex
+    }
+    catch {}
+    // Try Bastyon-style GetTxOut with object params (vout)
+    try {
+      if (DEBUG)
+        console.debug('[pntx] RPC GetTxOut (object,vout)')
+      const txout = await rpc.call('GetTxOut', { txid, vout, include_mempool: true })
+      const txoutRes = txout && txout.result ? txout.result : txout
+      const hex = txoutRes?.scriptPubKey?.hex
+      if (hex)
+        return hex
+    }
+    catch {}
+    // Try bitcoind-style lowercase gettxout with array params
+    try {
+      if (DEBUG)
+        console.debug('[pntx] RPC gettxout (array)')
+      const txout = await rpc.call('gettxout', [txid, vout, true])
+      const txoutRes = txout && txout.result ? txout.result : txout
+      const hex = txoutRes?.scriptPubKey?.hex || txoutRes?.scriptPubKey
+      if (hex)
+        return hex
+    }
+    catch {}
+    return undefined
+  }
+
   for (const u of utxos) {
     const txid = u.txid || u.txId || u.txID
     const vout = u.vout != null ? u.vout : u.n
@@ -202,15 +260,10 @@ async function createUnsignedSubscribeTxFromAddress({
       continue
 
     let scriptHex = (u.scriptPubKey && (u.scriptPubKey.hex || u.scriptPubKey)) || undefined
-    if (!scriptHex) {
-      const txout = await rpc.call('GetTxOut', { txid, n: vout, include_mempool: true })
-      const txoutRes = txout && txout.result ? txout.result : txout
-      if (!txoutRes)
-        continue // spent meanwhile
-      scriptHex = txoutRes.scriptPubKey && txoutRes.scriptPubKey.hex
-      if (!scriptHex)
-        continue
-    }
+    if (!scriptHex)
+      scriptHex = await fetchScriptHex(txid, vout)
+    if (!scriptHex)
+      continue // spent or cannot fetch
 
     // amount in coins (PKOIN). Support both amount and value fields.
     const amount = u.amount != null ? u.amount : (u.value != null ? u.value : undefined)
