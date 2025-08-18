@@ -100,10 +100,40 @@ export class SdkService {
         throw new Error('Host SDK does not support sign')
 
       if (import.meta?.env?.VITE_SDK_DEBUG)
-        console.log('[SDK DEBUG] invoking sdk.sign()')
+        console.log('[SDK DEBUG] invoking sdk.sign() with unsigned hex len:', unsignedHex.length)
 
       const res = await fn(unsignedHex)
-      const signedHex: unknown = (res && (res.hex ?? res.signed ?? res.result)) ?? (typeof res === 'string' ? res : '')
+
+      if (import.meta?.env?.VITE_SDK_DEBUG) {
+        try {
+          const keys = res && typeof res === 'object' ? Object.keys(res as any) : []
+          console.log('[SDK DEBUG] sdk.sign() raw result type:', typeof res, 'keys:', keys, 'value:', res)
+        }
+        catch {}
+      }
+
+      let signedHex: unknown = ''
+      if (typeof res === 'string') {
+        signedHex = res
+      }
+      else if (res && typeof res === 'object') {
+        const r: any = res
+        signedHex
+          = r.hex
+            ?? r.signed
+            ?? r.result
+            ?? r.tx
+            ?? r.raw
+            ?? r.rawtx
+            ?? r.data?.hex
+            ?? r.data?.signed
+            ?? r.data?.result
+            ?? r.data?.tx
+            ?? r.data?.raw
+            ?? r.data?.rawtx
+            ?? (typeof r.data === 'string' ? r.data : '')
+      }
+
       if (typeof signedHex !== 'string' || !signedHex)
         throw new Error('Signing failed')
       return signedHex
