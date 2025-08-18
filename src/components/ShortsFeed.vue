@@ -66,7 +66,8 @@ const selectedLanguage = ref<string>(
 )
 // Collapsible state for the Video Language section in Settings
 const langOpen = ref(true)
-
+// Collapsible state for the Playback section in Settings
+const playbackOpen = ref(true)
 // End behavior setting (what to do when a video ends)
 const END_BEHAVIOR_STORAGE_KEY = 'bshorts.endBehavior'
 type EndBehavior = 'replay' | 'next'
@@ -2593,6 +2594,44 @@ watch(visibleIndices, (idxs) => {
               Current: {{ selectedLanguage.toUpperCase() }}
             </div>
           </div>
+          <div class="playback-section">
+            <button
+              class="section-title collapsible"
+              type="button"
+              :aria-expanded="playbackOpen"
+              @click="playbackOpen = !playbackOpen"
+            >
+              <span>Playback</span>
+              <span class="chevron" :class="{ open: playbackOpen }">▸</span>
+            </button>
+            <div v-show="playbackOpen" class="option-group">
+              <label class="option-btn" :class="{ active: endBehavior === 'next' }">
+                <input
+                  v-model="endBehavior"
+                  class="radio"
+                  type="radio"
+                  name="end-behavior"
+                  value="next"
+                  aria-label="Play next video"
+                >
+                <span class="label">Play next video</span>
+              </label>
+              <label class="option-btn" :class="{ active: endBehavior === 'replay' }">
+                <input
+                  v-model="endBehavior"
+                  class="radio"
+                  type="radio"
+                  name="end-behavior"
+                  value="replay"
+                  aria-label="Replay current video"
+                >
+                <span class="label">Replay current video</span>
+              </label>
+            </div>
+            <div v-show="playbackOpen" class="help-text">
+              Choose what happens when a video ends.
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -3443,6 +3482,41 @@ watch(visibleIndices, (idxs) => {
   opacity: 0.8;
 }
 .settings-body .current-lang {
+  margin-top: 2px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+/* Settings: Playback end behavior */
+.settings-body .playback-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.settings-body .option-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.settings-body .option-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 600;
+}
+.settings-body .option-btn.active {
+  background: rgba(110, 193, 255, 0.16);
+  border-color: rgba(110, 193, 255, 0.35);
+}
+.settings-body .option-btn .radio {
+  accent-color: #6ec1ff;
+}
+.settings-body .help-text {
   margin-top: 2px;
   font-size: 12px;
   opacity: 0.85;
