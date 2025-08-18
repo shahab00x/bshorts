@@ -149,8 +149,8 @@ export {
 /**
  * Convenience helper that gathers UTXOs via RPC and then builds the unsigned subscribe tx.
  * Requires RPC methods compatible with backend:
- *   - TxUnspent { address } (or listunspent fallback)
- *   - gettxout (lowercase) [txid, n, include_mempool] with legacy GetTxOut fallback
+ *   - txunspent [[address], 1, 9999999] (public proxy)
+ *   - getrawtransaction [txid, 1] to extract vout[n].scriptPubKey.hex
  * Proof methods are not required.
  *
  * @param {object} params
@@ -179,73 +179,69 @@ async function createUnsignedSubscribeTxFromAddress({
   if (!spendAddress)
     throw new Error('spendAddress required')
 
-  // 1) Enumerate UTXOs
+  // 1) Enumerate UTXOs via public proxy 'txunspent'
   let utxos
   try {
-    // Prefer object params per Bastyon docs
+    // Preferred: [[address], 1, 9999999]
     if (DEBUG)
-      console.debug('[pntx] RPC TxUnspent (object)')
-    let res = await rpc.call('TxUnspent', { address: spendAddress })
+      console.debug('[pntx] RPC txunspent ([[addr],1,9999999])')
+    let res = await rpc.call('txunspent', [[spendAddress], 1, 9999999])
     utxos = Array.isArray(res) ? res : (res && Array.isArray(res.result) ? res.result : [])
-    // Some backends expect array params
+    // Fallbacks for legacy parameter shapes
     if ((!utxos || utxos.length === 0)) {
       if (DEBUG)
-        console.debug('[pntx] RPC TxUnspent (array) fallback')
-      res = await rpc.call('TxUnspent', [spendAddress])
+        console.debug('[pntx] RPC txunspent ([addr,1,9999999]) fallback')
+      res = await rpc.call('txunspent', [spendAddress, 1, 9999999])
       utxos = Array.isArray(res) ? res : (res && Array.isArray(res.result) ? res.result : [])
-      // If still empty, try listunspent proactively
-      if ((!utxos || utxos.length === 0)) {
-        if (DEBUG)
-          console.debug('[pntx] RPC listunspent (array) fallback due to empty TxUnspent')
-        const lr = await rpc.call('listunspent', [0, 9999999, [spendAddress]])
-        utxos = Array.isArray(lr) ? lr : (lr && Array.isArray(lr.result) ? lr.result : [])
-      }
+    }
+    if ((!utxos || utxos.length === 0)) {
+      if (DEBUG)
+        console.debug('[pntx] RPC txunspent ([addr]) fallback')
+      res = await rpc.call('txunspent', [spendAddress])
+      utxos = Array.isArray(res) ? res : (res && Array.isArray(res.result) ? res.result : [])
     }
   }
   catch (e) {
     if (DEBUG)
-      console.warn('[pntx] TxUnspent failed, trying listunspent:', e)
-    // Optional fallback to Bitcoin Core style listunspent
-    const res = await rpc.call('listunspent', [0, 9999999, [spendAddress]])
-    utxos = Array.isArray(res) ? res : (res && Array.isArray(res.result) ? res.result : [])
+      console.warn('[pntx] txunspent failed:', e)
+    utxos = []
   }
 
   if (!Array.isArray(utxos) || utxos.length === 0)
     throw new Error('No UTXOs returned for spendAddress')
 
-  // 2) Ensure scriptPubKey.hex for each UTXO (fetch via gettxout if missing)
+  // 2) Ensure scriptPubKey.hex for each UTXO (fetch via getrawtransaction if missing)
   const prepared = []
   // Helper to fetch scriptPubKey hex with multiple fallbacks
   const fetchScriptHex = async (txid, vout) => {
-    // Prefer bitcoind-style lowercase gettxout with array params (core-compatible)
+    // Prefer public getrawtransaction with verbose output
     try {
       if (DEBUG)
-        console.debug('[pntx] RPC gettxout (array)')
-      const txout = await rpc.call('gettxout', [txid, vout, true])
-      const txoutRes = txout && txout.result ? txout.result : txout
-      const hex = txoutRes?.scriptPubKey?.hex || txoutRes?.scriptPubKey
+        console.debug('[pntx] RPC getrawtransaction (verbose)')
+      const tx = await rpc.call('getrawtransaction', [txid, 1])
+      const txRes = tx && tx.result ? tx.result : tx
+      const vouts = txRes?.vout || []
+      let out = Array.isArray(vouts) ? vouts.find(o => o?.n === vout) : undefined
+      if (!out && Array.isArray(vouts) && vouts[vout])
+        out = vouts[vout]
+
+      const hex = out?.scriptPubKey?.hex
       if (hex)
         return hex
     }
     catch {}
-    // Legacy Bastyon-style GetTxOut with object params (vout)
+    // Fallback to getrawtransactionwithmessage if available
     try {
       if (DEBUG)
-        console.debug('[pntx] RPC GetTxOut (object,vout) fallback')
-      const txout = await rpc.call('GetTxOut', { txid, vout, include_mempool: true })
-      const txoutRes = txout && txout.result ? txout.result : txout
-      const hex = txoutRes?.scriptPubKey?.hex
-      if (hex)
-        return hex
-    }
-    catch {}
-    // Legacy Bastyon-style GetTxOut with object params (n)
-    try {
-      if (DEBUG)
-        console.debug('[pntx] RPC GetTxOut (object,n) fallback')
-      const txout = await rpc.call('GetTxOut', { txid, n: vout, include_mempool: true })
-      const txoutRes = txout && txout.result ? txout.result : txout
-      const hex = txoutRes?.scriptPubKey?.hex
+        console.debug('[pntx] RPC getrawtransactionwithmessage (verbose) fallback')
+      const tx = await rpc.call('getrawtransactionwithmessage', [txid])
+      const txRes = tx && tx.result ? tx.result : tx
+      const vouts = txRes?.vout || []
+      let out = Array.isArray(vouts) ? vouts.find(o => o?.n === vout) : undefined
+      if (!out && Array.isArray(vouts) && vouts[vout])
+        out = vouts[vout]
+
+      const hex = out?.scriptPubKey?.hex
       if (hex)
         return hex
     }
