@@ -64,6 +64,8 @@ const selectedLanguage = ref<string>(
   (typeof localStorage !== 'undefined' && localStorage.getItem(LANGUAGE_STORAGE_KEY))
   || appConfig.defaultLanguage,
 )
+// Collapsible state for the Video Language section in Settings
+const langOpen = ref(true)
 watch(selectedLanguage, async (code) => {
   try {
     if (typeof localStorage !== 'undefined' && code)
@@ -1748,17 +1750,12 @@ async function loadPlaylist() {
     error.value = null
     const lang = (selectedLanguage.value || appConfig.defaultLanguage || 'en').toLowerCase()
     const primaryUrl = `/playlists/${lang}/latest.json`
-    const fallbackUrl = `/playlists/${appConfig.defaultLanguage}/latest.json`
-    const urls = primaryUrl === fallbackUrl ? [primaryUrl] : [primaryUrl, fallbackUrl]
 
     let loaded: any = []
-    for (const url of urls) {
-      const res = await fetch(url, { cache: 'no-store' })
-      if (res.ok) {
-        loaded = await res.json()
-        break
-      }
-    }
+    // Fetch only the selected language; if missing, show empty state instead of falling back
+    const res = await fetch(primaryUrl, { cache: 'no-store' })
+    if (res.ok)
+      loaded = await res.json()
 
     items.value = (Array.isArray(loaded) ? loaded : []).filter((it: VideoItem) => !!getHls(it))
     videoLoading.value = items.value.map(() => false)
@@ -2142,6 +2139,9 @@ watch(visibleIndices, (idxs) => {
     <div v-else-if="error" class="center-msg text-red">
       {{ error }}
     </div>
+    <div v-else-if="items.length === 0" class="center-msg">
+      No videos available yet for this Video Language.
+    </div>
 
     <div
       v-else
@@ -2523,10 +2523,16 @@ watch(visibleIndices, (idxs) => {
           @touchend="onSettingsTouchEnd"
         >
           <div class="lang-section">
-            <div class="section-title">
-              Language
-            </div>
-            <div class="lang-grid">
+            <button
+              class="section-title collapsible"
+              type="button"
+              :aria-expanded="String(langOpen)"
+              @click="langOpen = !langOpen"
+            >
+              <span>Video Language</span>
+              <span class="chevron" :class="{ open: langOpen }">▸</span>
+            </button>
+            <div v-show="langOpen" class="lang-grid">
               <button
                 v-for="lang in availableLanguages"
                 :key="lang.code"
@@ -2541,7 +2547,7 @@ watch(visibleIndices, (idxs) => {
                 <span class="label">{{ lang.label }}</span>
               </button>
             </div>
-            <div class="current-lang">
+            <div v-show="langOpen" class="current-lang">
               Current: {{ selectedLanguage.toUpperCase() }}
             </div>
           </div>
