@@ -79,21 +79,8 @@ const endBehavior = ref<EndBehavior>(
 const feedbackOpen = ref(false)
 const feedbackText = ref('')
 const feedbackSending = ref(false)
-
-function openFeedbackLink(ev?: Event) {
-  const url = (appConfig as any)?.feedbackUrl
-  const mail = (appConfig as any)?.feedbackMailTo
-  if (typeof url === 'string' && url) {
-    void handleExternalLink(url, ev)
-    return
-  }
-  // Fallback to mailto with prefilled subject/body
-  const to = typeof mail === 'string' && mail ? mail : 'support@bastyon.com'
-  const subject = encodeURIComponent('Bastyon Shorts feedback')
-  const body = encodeURIComponent(feedbackText.value || '')
-  const href = `mailto:${to}?subject=${subject}&body=${body}`
-  void handleExternalLink(href, ev)
-}
+const feedbackStatus = ref<string | null>(null)
+const feedbackError = ref<string | null>(null)
 
 // Open developer's profile from the Settings drawer footer
 function openDeveloperProfile(ev?: Event) {
@@ -103,13 +90,29 @@ function openDeveloperProfile(ev?: Event) {
 }
 
 async function submitFeedback(ev?: Event) {
-  if (!feedbackText.value || feedbackSending.value)
+  if (ev)
+    ev.preventDefault()
+  const text = feedbackText.value.trim()
+  if (!text || feedbackSending.value)
     return
   feedbackSending.value = true
+  feedbackError.value = null
+  feedbackStatus.value = null
   try {
-    openFeedbackLink(ev)
-    // Clear after triggering
+    const res = await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+    if (!res.ok) {
+      const msg = await res.text().catch(() => '')
+      throw new Error(msg || `HTTP ${res.status}`)
+    }
     feedbackText.value = ''
+    feedbackStatus.value = 'Thanks for your feedback! Saved locally.'
+  }
+  catch (e: any) {
+    feedbackError.value = e?.message || 'Failed to save feedback'
   }
   finally {
     feedbackSending.value = false
@@ -2701,13 +2704,12 @@ watch(endBehavior, (val) => {
                 >
                   {{ feedbackSending ? 'Sending…' : 'Send feedback' }}
                 </button>
-                <button
-                  class="link-btn"
-                  type="button"
-                  @click="openFeedbackLink($event)"
-                >
-                  Open feedback page
-                </button>
+              </div>
+              <div v-if="feedbackStatus" class="feedback-status" role="status">
+                {{ feedbackStatus }}
+              </div>
+              <div v-if="feedbackError" class="feedback-error text-red" role="alert">
+                {{ feedbackError }}
               </div>
             </div>
           </div>
