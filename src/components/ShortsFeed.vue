@@ -806,6 +806,7 @@ async function fetchCommentsFor(hash: string, { force = false }: { force?: boole
   state.error = null
   try {
     const res: any = await SdkService.rpc('getcomments', [hash, '', ''])
+    console.log('rpc.getcomments results', res)
     let items: any[] = []
     if (Array.isArray(res))
       items = res
