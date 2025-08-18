@@ -103,6 +103,7 @@ export class SdkService {
         console.log('[SDK DEBUG] invoking sdk.sign() with unsigned hex len:', unsignedHex.length)
 
       const res = await fn(unsignedHex)
+      console.log(res)
 
       if (import.meta?.env?.VITE_SDK_DEBUG) {
         try {
@@ -112,26 +113,47 @@ export class SdkService {
         catch {}
       }
 
-      let signedHex: unknown = ''
-      if (typeof res === 'string') {
-        signedHex = res
+      // Extraction helper to normalize various host response shapes
+      const extractSignedHex = (v: any): string => {
+        if (!v)
+          return ''
+        if (typeof v === 'string')
+          return v
+        const r: any = v
+        return (
+          r.hex
+          ?? r.signed
+          ?? r.result
+          ?? r.tx
+          ?? r.raw
+          ?? r.rawtx
+          ?? r.string
+          ?? r.data?.hex
+          ?? r.data?.signed
+          ?? r.data?.result
+          ?? r.data?.tx
+          ?? r.data?.raw
+          ?? r.data?.rawtx
+          ?? r.data?.string
+          ?? (typeof r.data === 'string' ? r.data : '')
+        ) as string
       }
-      else if (res && typeof res === 'object') {
-        const r: any = res
-        signedHex
-          = r.hex
-            ?? r.signed
-            ?? r.result
-            ?? r.tx
-            ?? r.raw
-            ?? r.rawtx
-            ?? r.data?.hex
-            ?? r.data?.signed
-            ?? r.data?.result
-            ?? r.data?.tx
-            ?? r.data?.raw
-            ?? r.data?.rawtx
-            ?? (typeof r.data === 'string' ? r.data : '')
+
+      let signedHex: string = extractSignedHex(res)
+
+      // If direct sign() didn't yield hex, try RPC fallback
+      if (typeof signedHex !== 'string' || !signedHex) {
+        console.error('SDK sign: unexpected result shape from sdk.sign()', res)
+        try {
+          const rpcRes = await this.rpc('sign', [unsignedHex])
+          if (import.meta?.env?.VITE_SDK_DEBUG)
+            console.log('[SDK DEBUG] fallback rpc(sign) result:', rpcRes)
+          signedHex = extractSignedHex(rpcRes)
+        }
+        catch (e) {
+          if (import.meta?.env?.VITE_SDK_DEBUG)
+            console.warn('[SDK DEBUG] fallback rpc(sign) error:', e)
+        }
       }
 
       if (typeof signedHex !== 'string' || !signedHex)
