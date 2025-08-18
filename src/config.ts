@@ -10,7 +10,7 @@ export const appConfig = {
   // Use TikTok-like pager (one page per view, swipe/wheel to change)
   pagerMode: true,
   // Show "Follow" button near the uploader name
-  showFollowButton: true,
+  showFollowButton: false,
   // Ensure at least this fraction of the source video is visible.
   // If cover-cropping would hide more than (1 - minVisibleFraction) of the video,
   // we automatically switch to object-fit: contain to reduce cropping.
