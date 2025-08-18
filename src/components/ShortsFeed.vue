@@ -2324,6 +2324,16 @@ watch(visibleIndices, (idxs) => {
                       <img :src="u" loading="lazy" decoding="async" alt="attachment">
                     </button>
                   </div>
+                  <div class="comment-actions" aria-label="Comment ratings (read-only)">
+                    <span class="action-btn" title="Thumbs up (open full post to rate)">
+                      <span class="icon" aria-hidden="true">👍</span>
+                      <span class="count">{{ formatCount((Number(c?.scoreUp) || 0)) }}</span>
+                    </span>
+                    <span class="action-btn" title="Thumbs down (open full post to rate)">
+                      <span class="icon" aria-hidden="true">👎</span>
+                      <span class="count">{{ formatCount((Number(c?.scoreDown) || 0)) }}</span>
+                    </span>
+                  </div>
                   <div v-if="shouldShowRepliesToggle(c)" class="replies-toggle-row">
                     <button class="replies-toggle-btn" @click="toggleRepliesForComment(c)">
                       <template v-if="isRepliesOpen(c)">
@@ -2357,6 +2367,16 @@ watch(visibleIndices, (idxs) => {
                               >
                                 <img :src="u" loading="lazy" decoding="async" alt="attachment">
                               </button>
+                            </div>
+                            <div class="comment-actions reply-actions" aria-label="Reply ratings (read-only)">
+                              <span class="action-btn" title="Thumbs up (open full post to rate)">
+                                <span class="icon" aria-hidden="true">👍</span>
+                                <span class="count">{{ formatCount((Number(rc?.scoreUp) || 0)) }}</span>
+                              </span>
+                              <span class="action-btn" title="Thumbs down (open full post to rate)">
+                                <span class="icon" aria-hidden="true">👎</span>
+                                <span class="count">{{ formatCount((Number(rc?.scoreDown) || 0)) }}</span>
+                              </span>
                             </div>
                           </div>
                         </div>
@@ -3076,6 +3096,50 @@ watch(visibleIndices, (idxs) => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* Comment actions: thumbs up/down counts */
+.comment-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  opacity: 0.9;
+}
+.comment-actions .action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #ddd;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+.comment-actions .action-btn .icon {
+  line-height: 1;
+}
+.comment-actions .action-btn .count {
+  opacity: 0.95;
+}
+.reply-actions {
+  opacity: 0.85;
+  font-size: 12px;
+}
+
+/* Replies toggle row */
+.replies-toggle-row {
+  margin-top: 6px;
+}
+.replies-toggle-btn {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(110, 193, 255, 0.25);
+  background: rgba(110, 193, 255, 0.12);
+  color: #9bd1ff;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* Image viewer overlay */
