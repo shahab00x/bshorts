@@ -816,7 +816,13 @@ async function fetchCommentsFor(hash: string, { force = false }: { force?: boole
       items = res.result
     else if (res?.data && Array.isArray(res.data))
       items = res.data
-    state.items = items
+    // Sort comments by (scoreUp - scoreDown) descending on first load
+    const sorted = items.slice().sort((a, b) => {
+      const as = (Number(a?.scoreUp) || 0) - (Number(a?.scoreDown) || 0)
+      const bs = (Number(b?.scoreUp) || 0) - (Number(b?.scoreDown) || 0)
+      return bs - as
+    })
+    state.items = sorted
     state.fetchedAt = Date.now()
     if (!visibleCountByHash.value[hash])
       visibleCountByHash.value[hash] = Math.min(10, state.items.length || 10)
@@ -867,7 +873,7 @@ function getInlineReplies(c: any): any[] {
 
 function getReplyCount(c: any): number {
   // Prefer explicit counts
-  const fields = ['reply_count', 'repliesCount', 'repliescount', 'commentcnt', 'childrenCount']
+  const fields = ['reply_count', 'repliesCount', 'repliescount', 'commentcnt', 'childrenCount', 'children']
   for (const f of fields) {
     const v = (c as any)?.[f]
     const n = typeof v === 'string' ? Number(v) : v
@@ -904,10 +910,7 @@ function getKnownReplyCount(c: any): number {
 function shouldShowRepliesToggle(c: any): boolean {
   if (isRepliesOpen(c))
     return true
-  if (getKnownReplyCount(c) > 0)
-    return true
-  // If we can fetch replies by id, allow showing the toggle even if count is unknown
-  return !!resolveCommentId(c)
+  return getKnownReplyCount(c) > 0
 }
 
 async function fetchRepliesFor(hash: string, parentId: string): Promise<any[]> {
