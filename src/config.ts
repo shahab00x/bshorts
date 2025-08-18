@@ -28,6 +28,14 @@ export const appConfig = {
     { code: 'ru', label: 'Русский', flag: '🇷🇺' },
     { code: 'zh', label: '中文', flag: '🇨🇳' },
   ],
+
+  // Optional: configure feedback destination used by Settings drawer
+  // If feedbackUrl is set, clicking "Send feedback" opens this URL via the SDK.
+  // Otherwise, a mailto: link is used with feedbackMailTo (or support@bastyon.com fallback).
+  feedbackUrl: './feedbacks/',
+  feedbackMailTo: '',
+  // Optional: developer profile URL for the settings drawer footer
+  developerProfileUrl: '',
 }
 
 export type AppConfig = typeof appConfig

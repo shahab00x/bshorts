@@ -65,9 +65,9 @@ const selectedLanguage = ref<string>(
   || appConfig.defaultLanguage,
 )
 // Collapsible state for the Video Language section in Settings
-const langOpen = ref(true)
+const langOpen = ref(false)
 // Collapsible state for the Playback section in Settings
-const playbackOpen = ref(true)
+const playbackOpen = ref(false)
 // End behavior setting (what to do when a video ends)
 const END_BEHAVIOR_STORAGE_KEY = 'bshorts.endBehavior'
 type EndBehavior = 'replay' | 'next'
@@ -75,22 +75,46 @@ const endBehavior = ref<EndBehavior>(
   (typeof localStorage !== 'undefined' && (localStorage.getItem(END_BEHAVIOR_STORAGE_KEY) as EndBehavior))
   || 'next',
 )
+// Feedback UI state (Settings drawer)
+const feedbackOpen = ref(false)
+const feedbackText = ref('')
+const feedbackSending = ref(false)
 
-watch(selectedLanguage, async (code) => {
-  try {
-    if (typeof localStorage !== 'undefined' && code)
-      localStorage.setItem(LANGUAGE_STORAGE_KEY, code)
+function openFeedbackLink(ev?: Event) {
+  const url = (appConfig as any)?.feedbackUrl
+  const mail = (appConfig as any)?.feedbackMailTo
+  if (typeof url === 'string' && url) {
+    void handleExternalLink(url, ev)
+    return
   }
-  catch {}
-  await reloadForLanguage()
-})
-watch(endBehavior, (val) => {
+  // Fallback to mailto with prefilled subject/body
+  const to = typeof mail === 'string' && mail ? mail : 'support@bastyon.com'
+  const subject = encodeURIComponent('Bastyon Shorts feedback')
+  const body = encodeURIComponent(feedbackText.value || '')
+  const href = `mailto:${to}?subject=${subject}&body=${body}`
+  void handleExternalLink(href, ev)
+}
+
+// Open developer's profile from the Settings drawer footer
+function openDeveloperProfile(ev?: Event) {
+  const url = (appConfig as any)?.developerProfileUrl
+  if (typeof url === 'string' && url)
+    void handleExternalLink(url, ev)
+}
+
+async function submitFeedback(ev?: Event) {
+  if (!feedbackText.value || feedbackSending.value)
+    return
+  feedbackSending.value = true
   try {
-    if (typeof localStorage !== 'undefined' && val)
-      localStorage.setItem(END_BEHAVIOR_STORAGE_KEY, val)
+    openFeedbackLink(ev)
+    // Clear after triggering
+    feedbackText.value = ''
   }
-  catch {}
-})
+  finally {
+    feedbackSending.value = false
+  }
+}
 
 // Comments state (cache by post hash)
 interface ReplyState { items: any[], loading: boolean, error: string | null }
@@ -108,7 +132,6 @@ const commentsByHash = ref<Record<string, CommentState>>({})
 const avatarsByAddress = ref<Record<string, string>>({})
 // Names cache (by address)
 const namesByAddress = ref<Record<string, string>>({})
-
 // Reputation caches
 const reputationsByAddress = ref<Record<string, number>>({})
 const addressByHash = ref<Record<string, string>>({})
@@ -1243,7 +1266,7 @@ function extractImageUrls(c: any): string[] {
   // Common fields that might contain images
   const fields = ['image', 'images', 'media', 'attachments', 'files']
   for (const f of fields) {
-    const v = (c as any)?.[f]
+    const v = (c as any)[f]
     if (!v)
       continue
     if (typeof v === 'string') {
@@ -2171,6 +2194,23 @@ watch(visibleIndices, (idxs) => {
       ensurePeerMetaForItem(it)
   }
 }, { immediate: true })
+
+watch(selectedLanguage, async (code) => {
+  try {
+    if (typeof localStorage !== 'undefined' && code)
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, code)
+  }
+  catch {}
+  await reloadForLanguage()
+})
+// Persist playback end behavior setting
+watch(endBehavior, (val) => {
+  try {
+    if (typeof localStorage !== 'undefined' && val)
+      localStorage.setItem(END_BEHAVIOR_STORAGE_KEY, val)
+  }
+  catch {}
+})
 </script>
 
 <template>
@@ -2235,7 +2275,7 @@ watch(visibleIndices, (idxs) => {
         </div>
         <!-- Loading spinner while video is loading/buffering -->
         <div v-if="inWindow(vi.idx) && videoLoading[vi.idx]" class="overlay-loading">
-          <LoadingSpinner :size="72" pad="14%" aria-label="Loading video" />
+          <LoadingSpinner :size="72" aria-label="Loading video" />
         </div>
         <!-- Tap for sound prompt (only when sound is off for the current item) -->
         <div v-if="vi.idx === currentIndex && !soundOn" class="overlay-sound">
@@ -2632,6 +2672,48 @@ watch(visibleIndices, (idxs) => {
               Choose what happens when a video ends.
             </div>
           </div>
+          <!-- Feedback section -->
+          <div class="feedback-section">
+            <button
+              class="section-title collapsible"
+              type="button"
+              :aria-expanded="feedbackOpen"
+              @click="feedbackOpen = !feedbackOpen"
+            >
+              <span>Feedback</span>
+              <span class="chevron" :class="{ open: feedbackOpen }">▸</span>
+            </button>
+            <div v-show="feedbackOpen" class="feedback-form">
+              <label class="sr-only" for="feedback-text">Your feedback</label>
+              <textarea
+                id="feedback-text"
+                v-model="feedbackText"
+                class="feedback-input"
+                rows="4"
+                placeholder="Tell us what you think…"
+              />
+              <div class="feedback-actions">
+                <button
+                  class="send-btn"
+                  type="button"
+                  :disabled="feedbackSending || !feedbackText.trim()"
+                  @click="submitFeedback($event)"
+                >
+                  {{ feedbackSending ? 'Sending…' : 'Send feedback' }}
+                </button>
+                <button
+                  class="link-btn"
+                  type="button"
+                  @click="openFeedbackLink($event)"
+                >
+                  Open feedback page
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="drawer-footer">
+          <a href="#" @click.prevent="openDeveloperProfile($event)">Developer profile</a>
         </div>
       </div>
     </div>
@@ -3520,5 +3602,59 @@ watch(visibleIndices, (idxs) => {
   margin-top: 2px;
   font-size: 12px;
   opacity: 0.85;
+}
+/* Settings: Feedback */
+.settings-body .feedback-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.settings-body .feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.settings-body .feedback-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: #fff;
+  font-family: inherit;
+}
+.settings-body .feedback-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings-body .send-btn,
+.settings-body .link-btn {
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 600;
+}
+.settings-body .send-btn:disabled {
+  opacity: 0.6;
+}
+.drawer-footer {
+  margin-top: auto;
+  padding: 10px 16px 16px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 </style>
