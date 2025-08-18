@@ -1191,7 +1191,10 @@ function extractImageUrls(c: any): string[] {
     if (!u)
       return
     const s = String(u)
-    if (/^https?:\/\/.+\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?.*)?$/i.test(s))
+    if (
+      /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(s)
+      || /^https?:\/\/.+\.(?:png|jpe?g|gif|webp|bmp|svg|avif)(?:\?.*)?$/i.test(s)
+    )
       urls.add(s)
   }
   // Common fields that might contain images
