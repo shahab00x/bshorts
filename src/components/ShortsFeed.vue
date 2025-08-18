@@ -66,6 +66,15 @@ const selectedLanguage = ref<string>(
 )
 // Collapsible state for the Video Language section in Settings
 const langOpen = ref(true)
+
+// End behavior setting (what to do when a video ends)
+const END_BEHAVIOR_STORAGE_KEY = 'bshorts.endBehavior'
+type EndBehavior = 'replay' | 'next'
+const endBehavior = ref<EndBehavior>(
+  (typeof localStorage !== 'undefined' && (localStorage.getItem(END_BEHAVIOR_STORAGE_KEY) as EndBehavior))
+  || 'next',
+)
+
 watch(selectedLanguage, async (code) => {
   try {
     if (typeof localStorage !== 'undefined' && code)
@@ -73,6 +82,13 @@ watch(selectedLanguage, async (code) => {
   }
   catch {}
   await reloadForLanguage()
+})
+watch(endBehavior, (val) => {
+  try {
+    if (typeof localStorage !== 'undefined' && val)
+      localStorage.setItem(END_BEHAVIOR_STORAGE_KEY, val)
+  }
+  catch {}
 })
 
 // Comments state (cache by post hash)
@@ -1785,6 +1801,31 @@ function onVideoBuffered(idx: number, payload: { ranges: { start: number, end: n
   buffered.value[idx] = payload
 }
 
+function onVideoEnded(idx: number) {
+  // Only handle end event for the current video
+  if (idx !== currentIndex.value)
+    return
+  if (endBehavior.value === 'replay') {
+    try {
+      const vr = videoRefs.value[idx]
+      vr?.seekTo?.(0)
+      // Ensure playback resumes
+      paused.value = false
+      vr?.play?.()
+    }
+    catch (e) {
+      void e
+    }
+    return
+  }
+  // Otherwise advance to next item, or pause if at the end
+  const isLast = idx >= items.value.length - 1
+  if (!isLast)
+    goToIndex(idx + 1)
+  else
+    paused.value = true
+}
+
 function onSeekClick(idx: number, ev: MouseEvent) {
   ev.stopPropagation()
   ev.preventDefault()
@@ -2166,13 +2207,14 @@ watch(visibleIndices, (idxs) => {
           v-if="inWindow(vi.idx)"
           :ref="(el) => setVideoRef(el, vi.idx)"
           :src="getHls(vi.item)!"
-          :loop="true"
+          :loop="endBehavior === 'replay'"
           :muted="!(soundOn && vi.idx === currentIndex && !paused)"
           :should-load="shouldLoad(vi.idx)"
           :should-play="shouldPlay(vi.idx)"
           @loading-change="onVideoLoadingChange(vi.idx, $event)"
           @progress="onVideoProgress(vi.idx, $event)"
           @buffered="onVideoBuffered(vi.idx, $event)"
+          @ended="onVideoEnded(vi.idx)"
         />
         <div v-else class="video-placeholder" />
 
@@ -2526,7 +2568,7 @@ watch(visibleIndices, (idxs) => {
             <button
               class="section-title collapsible"
               type="button"
-              :aria-expanded="String(langOpen)"
+              :aria-expanded="langOpen"
               @click="langOpen = !langOpen"
             >
               <span>Video Language</span>
