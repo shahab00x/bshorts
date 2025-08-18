@@ -13,6 +13,31 @@ import * as bitcoin from 'bitcoinjs-lib'
 // Enable verbose logs when app is started with VITE_SDK_DEBUG=true
 const DEBUG = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SDK_DEBUG
 
+// Pocketnet/PKOIN network params (sourced from pocketnet.gui/js/lib/pocketnet/btc17.js)
+const POCKETNET_TESTNET = {
+  messagePrefix: '\x18Bitcoin Signed Message:\n',
+  bech32: 'bc',
+  bip32: {
+    public: 0x043587CF,
+    private: 0x04358394,
+  },
+  pubKeyHash: 0x41,
+  scriptHash: 0x4E,
+  wif: 0x1E,
+}
+
+const POCKETNET_MAINNET = {
+  messagePrefix: '\x18Bitcoin Signed Message:\n',
+  bech32: 'bc',
+  bip32: {
+    public: 0x043587CF,
+    private: 0x04358394,
+  },
+  pubKeyHash: 0x37,
+  scriptHash: 0x50,
+  wif: 0x21,
+}
+
 // Constants from ActionOptions in actions.js
 const AMOUNT_C = 100000000 // satoshis per coin
 const DEFAULT_DUST_VALUE_SATS = 700 // dustValue = 700 sats
@@ -84,7 +109,7 @@ function createUnsignedSubscribeTx({
   feeSats = DEFAULT_FEE_SATS,
   timeDifference = 0,
   delayedNtime = 0,
-  network = bitcoin.networks.bitcoin,
+  network = POCKETNET_MAINNET,
 }) {
   if (!Array.isArray(utxos) || utxos.length === 0)
     throw new Error('utxos required')
@@ -144,6 +169,8 @@ export {
   // also export internal bits for advanced usage/testing
   DEFAULT_DUST_VALUE_SATS,
   DEFAULT_FEE_SATS,
+  POCKETNET_MAINNET,
+  POCKETNET_TESTNET,
 }
 
 /**
@@ -172,7 +199,7 @@ async function createUnsignedSubscribeTxFromAddress({
   feeSats = DEFAULT_FEE_SATS,
   timeDifference = 0,
   delayedNtime = 0,
-  network = bitcoin.networks.bitcoin,
+  network = POCKETNET_MAINNET,
 }) {
   if (!rpc || typeof rpc.call !== 'function')
     throw new Error('rpc client with call(method, params) required')
@@ -293,4 +320,6 @@ export default {
   createUnsignedSubscribeTxFromAddress,
   DEFAULT_DUST_VALUE_SATS,
   DEFAULT_FEE_SATS,
+  POCKETNET_MAINNET,
+  POCKETNET_TESTNET,
 }

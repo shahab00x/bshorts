@@ -349,6 +349,7 @@ async function followAuthor(it: any) {
       // Dynamic import of local CommonJS builder
       const pntx: any = await import('pntx')
       const createUnsignedSubscribeTxFromAddress = pntx.createUnsignedSubscribeTxFromAddress || pntx?.default?.createUnsignedSubscribeTxFromAddress
+      const NETWORK = pntx.POCKETNET_MAINNET || pntx?.default?.POCKETNET_MAINNET
       if (typeof createUnsignedSubscribeTxFromAddress !== 'function')
         throw new Error('createUnsignedSubscribeTxFromAddress not available')
 
@@ -360,6 +361,7 @@ async function followAuthor(it: any) {
         spendAddress,
         changeAddress: spendAddress,
         addressToFollow: resolvedAddr,
+        network: NETWORK,
       })
 
       const unsignedHex: string = unsignedRes?.hex
