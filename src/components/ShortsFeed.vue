@@ -57,6 +57,22 @@ const showDescriptionDrawer = ref(false)
 const showCommentsDrawer = ref(false)
 const showSettingsDrawer = ref(false)
 
+// Playlist language selection
+const LANGUAGE_STORAGE_KEY = 'bshorts.lang'
+const availableLanguages = appConfig.languages
+const selectedLanguage = ref<string>(
+  (typeof localStorage !== 'undefined' && localStorage.getItem(LANGUAGE_STORAGE_KEY))
+  || appConfig.defaultLanguage,
+)
+watch(selectedLanguage, async (code) => {
+  try {
+    if (typeof localStorage !== 'undefined' && code)
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, code)
+  }
+  catch {}
+  await reloadForLanguage()
+})
+
 // Comments state (cache by post hash)
 interface ReplyState { items: any[], loading: boolean, error: string | null }
 interface CommentState {
@@ -1709,14 +1725,42 @@ function onVisibilityChange() {
     maybeResumeFromHostReturn()
 }
 
+// Reset feed state and reload playlist for the selected language
+async function reloadForLanguage() {
+  try {
+    // Reset index and clear arrays to avoid flashing stale content
+    currentIndex.value = 0
+    items.value = []
+    videoLoading.value = []
+    progress.value = []
+    buffered.value = []
+    await nextTick()
+    await loadPlaylist()
+  }
+  catch (e) {
+    void e
+  }
+}
+
 async function loadPlaylist() {
   try {
     loading.value = true
-    const res = await fetch('/playlists/en/latest.json', { cache: 'no-store' })
-    if (!res.ok)
-      throw new Error(`Failed to load playlist: ${res.status}`)
-    const data = await res.json()
-    items.value = (Array.isArray(data) ? data : []).filter((it: VideoItem) => !!getHls(it))
+    error.value = null
+    const lang = (selectedLanguage.value || appConfig.defaultLanguage || 'en').toLowerCase()
+    const primaryUrl = `/playlists/${lang}/latest.json`
+    const fallbackUrl = `/playlists/${appConfig.defaultLanguage}/latest.json`
+    const urls = primaryUrl === fallbackUrl ? [primaryUrl] : [primaryUrl, fallbackUrl]
+
+    let loaded: any = []
+    for (const url of urls) {
+      const res = await fetch(url, { cache: 'no-store' })
+      if (res.ok) {
+        loaded = await res.json()
+        break
+      }
+    }
+
+    items.value = (Array.isArray(loaded) ? loaded : []).filter((it: VideoItem) => !!getHls(it))
     videoLoading.value = items.value.map(() => false)
     progress.value = items.value.map(() => ({ currentTime: 0, duration: 0 }))
     buffered.value = items.value.map(() => ({ ranges: [], duration: 0 }))
@@ -2478,14 +2522,28 @@ watch(visibleIndices, (idxs) => {
           @touchmove="onSettingsTouchMove($event)"
           @touchend="onSettingsTouchEnd"
         >
-          <div style="opacity: 0.9;">
-            <p style="margin: 0 0 10px 0;">
-              Settings panel (WIP)
-            </p>
-            <ul style="margin: 0; padding-left: 16px; line-height: 1.6;">
-              <li>Example setting 1</li>
-              <li>Example setting 2</li>
-            </ul>
+          <div class="lang-section">
+            <div class="section-title">
+              Language
+            </div>
+            <div class="lang-grid">
+              <button
+                v-for="lang in availableLanguages"
+                :key="lang.code"
+                class="lang-btn"
+                :class="{ active: selectedLanguage === lang.code }"
+                type="button"
+                :aria-pressed="selectedLanguage === lang.code"
+                @click="selectedLanguage = lang.code"
+              >
+                <span class="flag" aria-hidden="true">{{ lang.flag }}</span>
+                <span class="code">{{ lang.code.toUpperCase() }}</span>
+                <span class="label">{{ lang.label }}</span>
+              </button>
+            </div>
+            <div class="current-lang">
+              Current: {{ selectedLanguage.toUpperCase() }}
+            </div>
           </div>
         </div>
       </div>
@@ -3286,5 +3344,59 @@ watch(visibleIndices, (idxs) => {
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 13px;
+}
+/* Settings: Language selector */
+.settings-body .lang-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.settings-body .section-title {
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.95;
+}
+.settings-body .lang-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (min-width: 420px) {
+  .settings-body .lang-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.settings-body .lang-btn {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 600;
+}
+.settings-body .lang-btn.active {
+  background: rgba(110, 193, 255, 0.16);
+  border-color: rgba(110, 193, 255, 0.35);
+}
+.settings-body .lang-btn .flag {
+  font-size: 18px;
+  line-height: 1;
+}
+.settings-body .lang-btn .code {
+  font-size: 12px;
+  opacity: 0.9;
+}
+.settings-body .lang-btn .label {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.settings-body .current-lang {
+  margin-top: 2px;
+  font-size: 12px;
+  opacity: 0.85;
 }
 </style>

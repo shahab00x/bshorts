@@ -15,6 +15,19 @@ export const appConfig = {
   // If cover-cropping would hide more than (1 - minVisibleFraction) of the video,
   // we automatically switch to object-fit: contain to reduce cropping.
   minVisibleFraction: 0.60,
+
+  // Default language and available language playlists
+  defaultLanguage: 'en',
+  languages: [
+    { code: 'de', label: 'Deutsch', flag: '🇩🇪' },
+    { code: 'en', label: 'English', flag: '🇺🇸' },
+    { code: 'es', label: 'Español', flag: '🇪🇸' },
+    { code: 'fr', label: 'Français', flag: '🇫🇷' },
+    { code: 'it', label: 'Italiano', flag: '🇮🇹' },
+    { code: 'ko', label: '한국어', flag: '🇰🇷' },
+    { code: 'ru', label: 'Русский', flag: '🇷🇺' },
+    { code: 'zh', label: '中文', flag: '🇨🇳' },
+  ],
 }
 
 export type AppConfig = typeof appConfig
