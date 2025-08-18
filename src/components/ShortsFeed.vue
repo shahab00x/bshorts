@@ -1197,6 +1197,14 @@ function extractImageUrls(c: any): string[] {
     )
       urls.add(s)
   }
+  // Looser acceptance for msg-derived values (may lack extension)
+  const pushAny = (u: any) => {
+    if (!u)
+      return
+    const s = String(u)
+    if (/^data:image\//.test(s) || /^https?:\/\//i.test(s))
+      urls.add(s)
+  }
   // Common fields that might contain images
   const fields = ['image', 'images', 'media', 'attachments', 'files']
   for (const f of fields) {
@@ -1216,6 +1224,51 @@ function extractImageUrls(c: any): string[] {
     }
     else if (typeof v === 'object') {
       push((v as any).url || (v as any).src || (v as any).link)
+    }
+  }
+  // Parse images from RPC msg JSON if present
+  const tryParseMsg = (val: any) => {
+    if (!val)
+      return null
+    if (typeof val === 'string') {
+      const s = val.trim()
+      if (!s)
+        return null
+      try {
+        return JSON.parse(s)
+      }
+      catch {
+        return null
+      }
+    }
+    if (typeof val === 'object')
+      return val
+    return null
+  }
+  const msgCandidates = [
+    (c as any)?.msg,
+    (c as any)?.message,
+    (c as any)?.data,
+    (c as any)?.comment,
+  ]
+  for (const cand of msgCandidates) {
+    const obj = tryParseMsg(cand)
+    if (obj && typeof obj === 'object') {
+      const im: any = (obj as any).images
+      if (typeof im === 'string') {
+        pushAny(im)
+      }
+      else if (Array.isArray(im)) {
+        for (const el of im) {
+          if (typeof el === 'string')
+            pushAny(el)
+          else if (el && typeof el === 'object')
+            pushAny((el as any).url || (el as any).src || (el as any).link)
+        }
+      }
+      const single = (obj as any).url || (obj as any).image
+      if (single)
+        pushAny(single)
     }
   }
   // Also parse from comment text
