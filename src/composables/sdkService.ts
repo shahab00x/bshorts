@@ -77,6 +77,44 @@ export class SdkService {
   }
 
   /**
+   * Signs a raw transaction hex using the host SDK (not via RPC).
+   * Requires the 'sign' permission.
+   * @param unsignedHex Raw unsigned transaction hex
+   * @returns Promise<string> Signed transaction hex
+   */
+  public static async sign(unsignedHex: string): Promise<string> {
+    this.ensureInitialized()
+    try {
+      if (typeof unsignedHex !== 'string' || !unsignedHex)
+        throw new Error('unsignedHex is empty')
+
+      // Ensure permission; ignore errors to allow host to prompt on sign()
+      try {
+        await this.checkAndRequestPermissions(['sign'])
+      }
+      catch {}
+
+      const sdkAny = this.sdk as any
+      const fn = sdkAny?.sign
+      if (typeof fn !== 'function')
+        throw new Error('Host SDK does not support sign')
+
+      if (import.meta?.env?.VITE_SDK_DEBUG)
+        console.log('[SDK DEBUG] invoking sdk.sign()')
+
+      const res = await fn(unsignedHex)
+      const signedHex: unknown = (res && (res.hex ?? res.signed ?? res.result)) ?? (typeof res === 'string' ? res : '')
+      if (typeof signedHex !== 'string' || !signedHex)
+        throw new Error('Signing failed')
+      return signedHex
+    }
+    catch (error) {
+      console.error('Error during SDK sign:', error)
+      throw error
+    }
+  }
+
+  /**
    * Ensures the SDK is initialized before calling other methods.
    * Throws an error if the SDK is not initialized.
    */

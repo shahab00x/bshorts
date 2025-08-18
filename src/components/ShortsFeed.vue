@@ -371,10 +371,7 @@ async function followAuthor(it: any) {
       if (import.meta?.env?.VITE_SDK_DEBUG)
         console.debug('[follow] signing unsigned tx')
 
-      const signRes: any = await SdkService.rpc('sign', [unsignedHex])
-      const signedHex: string = (signRes && (signRes.hex || signRes.signed || signRes.result)) || (typeof signRes === 'string' ? signRes : '')
-      if (typeof signedHex !== 'string' || !signedHex)
-        throw new Error('Signing failed')
+      const signedHex: string = await SdkService.sign(unsignedHex)
 
       if (import.meta?.env?.VITE_SDK_DEBUG)
         console.debug('[follow] broadcasting signed tx')
