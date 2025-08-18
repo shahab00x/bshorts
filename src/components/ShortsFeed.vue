@@ -109,7 +109,7 @@ async function submitFeedback(ev?: Event) {
       throw new Error(msg || `HTTP ${res.status}`)
     }
     feedbackText.value = ''
-    feedbackStatus.value = 'Thanks for your feedback! Saved locally.'
+    feedbackStatus.value = 'Thanks for your feedback!'
   }
   catch (e: any) {
     feedbackError.value = e?.message || 'Failed to save feedback'
