@@ -1787,6 +1787,86 @@ async function reloadForLanguage() {
   }
 }
 
+function normalizeItem(rec: any): any {
+  // If already in expected shape, return as-is
+  const hlsExisting = rec?.videoInfo?.peertube?.hlsUrl || rec?.rawPost?.peertube?.hlsUrl
+  const apiExisting = rec?.videoInfo?.peertube?.apiUrl || rec?.rawPost?.peertube?.apiUrl
+  const hasNewFields = (
+    rec?.hls_link != null
+    || rec?.peertube_api_link != null
+    || rec?.author_address != null
+    || rec?.video_hash != null
+    || rec?.number_of_comments != null
+    || rec?.tags != null
+  )
+  if (!hasNewFields && (hlsExisting || apiExisting))
+    return rec
+
+  const out: any = { ...rec }
+
+  // Ensure nested structures
+  out.videoInfo = out.videoInfo || {}
+  out.videoInfo.peertube = out.videoInfo.peertube || {}
+  out.rawPost = out.rawPost || {}
+  out.rawPost.peertube = out.rawPost.peertube || {}
+
+  // Map PeerTube URLs
+  if (typeof rec?.hls_link === 'string' && rec.hls_link) {
+    out.videoInfo.peertube.hlsUrl = rec.hls_link
+    out.rawPost.peertube.hlsUrl = rec.hls_link
+  }
+  if (typeof rec?.peertube_api_link === 'string' && rec.peertube_api_link) {
+    out.videoInfo.peertube.apiUrl = rec.peertube_api_link
+    out.rawPost.peertube.apiUrl = rec.peertube_api_link
+  }
+
+  // Map identifiers
+  if (typeof rec?.video_hash === 'string' && rec.video_hash)
+    out.rawPost.video_hash = rec.video_hash
+  if (typeof rec?.author_address === 'string' && rec.author_address) {
+    out.rawPost.author_address = rec.author_address
+    if (!out.uploaderAddress)
+      out.uploaderAddress = rec.author_address
+  }
+
+  // Map counts
+  if (rec?.number_of_comments != null) {
+    const n = typeof rec.number_of_comments === 'string' ? Number(rec.number_of_comments) : rec.number_of_comments
+    if (Number.isFinite(n)) {
+      out.comments = n
+      out.rawPost.comments = n
+    }
+  }
+
+  // Map hashtags/tags (string or array). Keep both rawPost.hashtags and top-level fallback.
+  if (rec?.tags != null && out.rawPost.hashtags == null) {
+    out.rawPost.hashtags = rec.tags
+    if (out.hashtags == null)
+      out.hashtags = rec.tags
+  }
+
+  // Optional pass-throughs
+  if (rec?.author_reputation != null && out.rawPost.author_reputation == null)
+    out.rawPost.author_reputation = rec.author_reputation
+  if (out.description == null && rec?.description != null)
+    out.description = rec.description
+
+  // Seed caches opportunistically
+  try {
+    const hash = out?.rawPost?.video_hash
+    const addr = out?.rawPost?.author_address || out?.uploaderAddress
+    if (hash && addr && !addressByHash.value[hash])
+      addressByHash.value[hash] = addr
+    if (addr && typeof rec?.author_avatar === 'string' && rec.author_avatar) {
+      if (!avatarsByAddress.value[addr])
+        avatarsByAddress.value[addr] = rec.author_avatar
+    }
+  }
+  catch {}
+
+  return out
+}
+
 async function loadPlaylist() {
   try {
     loading.value = true
@@ -1800,7 +1880,8 @@ async function loadPlaylist() {
     if (res.ok)
       loaded = await res.json()
 
-    items.value = (Array.isArray(loaded) ? loaded : []).filter((it: VideoItem) => !!getHls(it))
+    const mapped = Array.isArray(loaded) ? loaded.map(normalizeItem) : []
+    items.value = mapped.filter((it: VideoItem) => !!getHls(it))
     videoLoading.value = items.value.map(() => false)
     progress.value = items.value.map(() => ({ currentTime: 0, duration: 0 }))
     buffered.value = items.value.map(() => ({ ranges: [], duration: 0 }))
