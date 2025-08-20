@@ -142,7 +142,7 @@ const repLoadingByHash = ref<Record<string, boolean>>({})
 const repErrorByHash = ref<Record<string, string | null>>({})
 
 // Descriptions cache (by post hash)
-interface DescState { text: string, loading: boolean, error: string | null, fetchedAt: number }
+interface DescState { text: string, caption?: string, loading: boolean, error: string | null, fetchedAt: number }
 const descriptionsByHash = ref<Record<string, DescState>>({})
 
 // Follow state (by address)
@@ -1234,7 +1234,7 @@ function getDescription(it: any): string {
 // Description fetching and cache helpers
 function ensureDescState(hash: string): DescState {
   if (!descriptionsByHash.value[hash])
-    descriptionsByHash.value[hash] = { text: '', loading: false, error: null, fetchedAt: 0 }
+    descriptionsByHash.value[hash] = { text: '', caption: '', loading: false, error: null, fetchedAt: 0 }
   return descriptionsByHash.value[hash]
 }
 
@@ -1251,13 +1251,16 @@ async function fetchDescriptionFor(hash: string, { force = false }: { force?: bo
   try {
     const res: any = await SdkService.rpc('getcontent', [[hash], ''])
     let text = ''
-    if (Array.isArray(res) && res.length > 0) {
-      const rec = res[0]
-      // Prefer explicit description fields then parse common RPC payloads
+    let caption = ''
+    const arr: any[] = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : [])
+    if (arr.length > 0) {
+      const rec = arr[0]
+      // m: description/message, c: caption/title per Bastyon compact fields
+      caption = rec?.c || rec?.caption || rec?.title || ''
       text = (
-        rec?.description
+        rec?.m
+        || rec?.description
         || rec?.desc
-        || rec?.caption
         || getCommentText(rec?.msg)
         || getCommentText(rec?.message)
         || getCommentText(rec?.data)
@@ -1266,6 +1269,7 @@ async function fetchDescriptionFor(hash: string, { force = false }: { force?: bo
       )
     }
     st.text = typeof text === 'string' ? text : ''
+    st.caption = typeof caption === 'string' ? caption : ''
     st.fetchedAt = Date.now()
   }
   catch (e: any) {
@@ -1427,11 +1431,11 @@ function extractImageUrls(c: any): string[] {
   return Array.from(urls).slice(0, 6)
 }
 
-const descCaption = computed(() => getCaption(currentItem.value))
 const currentDescState = computed(() => {
   const h = currentVideoHash.value
   return h ? descriptionsByHash.value[h] : undefined
 })
+const descCaption = computed(() => currentDescState.value?.caption || getCaption(currentItem.value))
 const descText = computed(() => currentDescState.value?.text || getDescription(currentItem.value))
 const descHtml = computed(() => linkify(descText.value || ''))
 const descTags = computed(() => parseHashtags(currentItem.value?.rawPost?.hashtags ?? (currentItem.value as any)?.hashtags))
