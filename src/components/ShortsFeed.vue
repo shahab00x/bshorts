@@ -1231,6 +1231,35 @@ function getDescription(it: any): string {
   )
 }
 
+// Helpers for overlay preview: prefer cached RPC caption/description
+function getItemHash(it: any): string | null {
+  return (it as any)?.rawPost?.video_hash ?? null
+}
+function getCachedDescStateByItem(it: any): DescState | undefined {
+  const h = getItemHash(it)
+  return h ? descriptionsByHash.value[h] : undefined
+}
+function getCaptionForItem(it: any): string {
+  const st = getCachedDescStateByItem(it)
+  return (st?.caption && st.caption.trim()) ? st.caption : getCaption(it)
+}
+function getDescForItem(it: any): string {
+  const st = getCachedDescStateByItem(it)
+  return (st?.text && st.text.trim()) ? st.text : getDescription(it)
+}
+function truncate(str: string, maxLen = 140): string {
+  const s = (str || '').trim()
+  if (s.length <= maxLen)
+    return s
+  return `${s.slice(0, Math.max(0, maxLen - 1)).trimEnd()}…`
+}
+function overlayPreviewFor(it: any): string {
+  const cap = getCaptionForItem(it)
+  const desc = getDescForItem(it)
+  const joined = [cap, desc].filter(Boolean).join(' — ')
+  return truncate(joined, 160)
+}
+
 // Description fetching and cache helpers
 function ensureDescState(hash: string): DescState {
   if (!descriptionsByHash.value[hash])
@@ -2486,7 +2515,7 @@ watch(endBehavior, (val) => {
               </button>
             </div>
             <div class="desc" title="View description" @click.stop="openDescriptionDrawer">
-              {{ vi.item.description }}
+              {{ overlayPreviewFor(vi.item) }}
               <span v-if="peerMetaString(vi.item)" class="desc-meta"> · {{ peerMetaString(vi.item) }}</span>
             </div>
           </div>
@@ -2592,7 +2621,6 @@ watch(endBehavior, (val) => {
             class="desc-title"
           >
             {{ descCaption }}
-            <span v-if="peerMetaString(currentItem)" class="desc-meta"> · {{ peerMetaString(currentItem) }}</span>
           </div>
           <div v-if="!currentVideoHash" class="center-msg">
             No post id
@@ -2609,6 +2637,9 @@ watch(endBehavior, (val) => {
             </div>
           </div>
           <div v-else class="desc-text" @click="onDescHtmlClick" v-html="descHtml" />
+          <div v-if="peerMetaString(currentItem)" class="desc-meta end">
+            {{ peerMetaString(currentItem) }}
+          </div>
           <div v-if="descTags.length" class="hashtags-row">
             <a
               v-for="(tag, i) in descTags"
