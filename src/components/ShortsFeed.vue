@@ -223,8 +223,18 @@ async function filterOutDeletedAndBannedItems(arr: any[]): Promise<any[]> {
       const list: any[] = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : [])
       for (const rec of list) {
         const h = (rec?.hash || rec?.video_hash || rec?.txid || rec?.id || '').toString()
-        if (h)
-          deletedByHash[h] = !!rec?.deleted
+        if (h) {
+          const typeStr = String((rec as any)?.type || (rec as any)?.Type || '').toLowerCase()
+          const d = (rec as any)?.deleted
+          const isDeleted = (
+            d === true
+            || d === 'true'
+            || d === 1
+            || String(d).toLowerCase() === 'yes'
+            || typeStr === 'contentdelete'
+          )
+          deletedByHash[h] = !!isDeleted
+        }
         const addr = rec?.address || rec?.Address || rec?.adr
         if (typeof addr === 'string' && addr) {
           addrByHashLocal[h] = addr
