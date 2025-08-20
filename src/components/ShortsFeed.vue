@@ -198,34 +198,76 @@ async function isAddressBanned(addr?: string | null, currentHeight?: number): Pr
   }
 }
 
-// Filter out videos whose authors are currently banned
-async function filterOutBannedItems(arr: any[]): Promise<any[]> {
+// Filter out deleted posts and videos whose authors are currently banned
+async function filterOutDeletedAndBannedItems(arr: any[]): Promise<any[]> {
+  if (!Array.isArray(arr) || !arr.length)
+    return arr
+  // Get current height for ban comparison
+  let height = 0
   try {
     const hres: any = await SdkService.rpc('getblockcount', [])
-    const height = typeof hres === 'number' ? hres : Number(hres)
-    // Resolve all addresses in parallel
-    const addrPromises = arr.map(async (it) => {
-      let addr = getAuthorAddress(it)
-      if (!addr) {
-        const hash = (it as any)?.rawPost?.video_hash
-        addr = await ensureAuthorAddressByHash(hash)
+    const n = typeof hres === 'number' ? hres : Number(hres)
+    height = Number.isFinite(n) ? n : 0
+  }
+  catch {}
+
+  // Batch query content metadata to detect deletions and inline bans info
+  const hashes = Array.from(new Set(
+    arr.map((it: any) => it?.rawPost?.video_hash).filter((h: any) => typeof h === 'string' && !!h),
+  )) as string[]
+  const deletedByHash: Record<string, boolean> = {}
+  const addrByHashLocal: Record<string, string> = {}
+  try {
+    if (hashes.length) {
+      const res: any = await SdkService.rpc('getcontent', [hashes, ''])
+      const list: any[] = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : [])
+      for (const rec of list) {
+        const h = (rec?.hash || rec?.video_hash || rec?.txid || rec?.id || '').toString()
+        if (h)
+          deletedByHash[h] = !!rec?.deleted
+        const addr = rec?.address || rec?.Address || rec?.adr
+        if (typeof addr === 'string' && addr) {
+          addrByHashLocal[h] = addr
+          if (!addressByHash.value[h])
+            addressByHash.value[h] = addr
+        }
+        // If bans info present on the content record, compute active state now
+        if (addr && rec?.bans && typeof rec.bans === 'object') {
+          const endings = Object.values(rec.bans).map((v: any) => Number(v)).filter((v: any) => Number.isFinite(v))
+          const active = endings.some((end: number) => end > (height || 0))
+          if (active)
+            banActiveByAddress.value[addr] = true
+          else if (banActiveByAddress.value[addr] == null)
+            banActiveByAddress.value[addr] = false
+        }
       }
-      return addr as string | null
-    })
-    const addrs = await Promise.all(addrPromises)
-    const uniq = Array.from(new Set(addrs.filter(Boolean) as string[]))
-    // Query bans in parallel (cached in isAddressBanned)
-    await Promise.all(uniq.map(a => isAddressBanned(a, height)))
-    // Filter items by cached ban status
-    return arr.filter((it, idx) => {
-      const a = addrs[idx]
-      return !a || !banActiveByAddress.value[a]
-    })
+    }
   }
-  catch {
-    // If height fetch fails, keep original array (fail-open)
-    return arr
+  catch {}
+
+  // Fallback: check bans for any addresses without a known status
+  const addrsToCheck = new Set<string>()
+  for (const it of arr as any[]) {
+    const hash = it?.rawPost?.video_hash
+    const direct = getAuthorAddress(it)
+    const addr = direct || (hash ? (addrByHashLocal[hash] || addressByHash.value[hash]) : null)
+    if (addr && banActiveByAddress.value[addr] == null)
+      addrsToCheck.add(addr)
   }
+  if (addrsToCheck.size)
+    await Promise.all(Array.from(addrsToCheck).map(a => isAddressBanned(a, height)))
+
+  // Finally filter
+  return arr.filter((it: any) => {
+    const hash = it?.rawPost?.video_hash
+    if (hash && deletedByHash[hash])
+      return false
+    const direct = getAuthorAddress(it)
+    const addr = direct || (hash ? (addrByHashLocal[hash] || addressByHash.value[hash]) : null)
+    if (addr && banActiveByAddress.value[addr])
+      return false
+    return true
+  })
 }
 
 // Descriptions cache (by post hash)
@@ -2065,8 +2107,8 @@ async function loadPlaylist() {
     const mapped = Array.isArray(loaded) ? loaded.map(normalizeItem) : []
     // Keep only items with playable HLS
     const withHls = mapped.filter((it: VideoItem) => !!getHls(it))
-    // Remove videos by authors with an active ban
-    const filtered = await filterOutBannedItems(withHls)
+    // Remove deleted posts and videos by authors with an active ban
+    const filtered = await filterOutDeletedAndBannedItems(withHls)
     items.value = filtered
     videoLoading.value = items.value.map(() => false)
     progress.value = items.value.map(() => ({ currentTime: 0, duration: 0 }))
