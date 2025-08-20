@@ -140,37 +140,97 @@ const reputationsByAddress = ref<Record<string, number>>({})
 const addressByHash = ref<Record<string, string>>({})
 const repLoadingByHash = ref<Record<string, boolean>>({})
 const repErrorByHash = ref<Record<string, string | null>>({})
+// Ban status cache (by address)
+const banActiveByAddress = ref<Record<string, boolean>>({})
 
-// Descriptions cache (by post hash)
-interface DescState { text: string, caption?: string, loading: boolean, error: string | null, fetchedAt: number }
-const descriptionsByHash = ref<Record<string, DescState>>({})
+// Avatars readiness state per post hash (used by comments drawer)
+const avatarsReadyByHash = ref<Record<string, boolean>>({})
+const avatarsPreparingByHash = ref<Record<string, boolean>>({})
 
-// Follow state (by address)
+// Visible comments count per post hash and helper accessor
+const visibleCountByHash = ref<Record<string, number>>({})
+function getVisibleCount(hash: string): number {
+  const n = visibleCountByHash.value[hash]
+  return typeof n === 'number' && Number.isFinite(n) ? n : 0
+}
+
+// Follow state caches by address
 const followedByAddress = ref<Record<string, boolean>>({})
 const followLoadingByAddress = ref<Record<string, boolean>>({})
 const followErrorByAddress = ref<Record<string, string | null>>({})
 
-// Avatars readiness (per post hash)
-const avatarsReadyByHash = ref<Record<string, boolean>>({})
-const avatarsPreparingByHash = ref<Record<string, boolean>>({})
+// Peertube metadata cache by item key
+interface PeerMetaState { loading: boolean, error: string | null, views: number | null, publishedAt: string | null, fetchedAt: number }
+const peerMetaByKey = ref<Record<string, PeerMetaState>>({})
 
-// Peertube metadata cache (by item key: apiUrl or hash)
-interface PeerMeta {
-  views?: number | null
-  publishedAt?: string | null
-  loading?: boolean
-  error?: string | null
-  fetchedAt?: number
+// Check if an address currently has an active ban (cached). Uses getbans and compares ending to current block height.
+async function isAddressBanned(addr?: string | null, currentHeight?: number): Promise<boolean> {
+  if (!addr)
+    return false
+  if (banActiveByAddress.value[addr] != null)
+    return !!banActiveByAddress.value[addr]
+  try {
+    // Fetch current height if not provided
+    let height = currentHeight
+    if (typeof height !== 'number' || !Number.isFinite(height)) {
+      const hres: any = await SdkService.rpc('getblockcount', [])
+      const n = typeof hres === 'number' ? hres : Number(hres)
+      height = Number.isFinite(n) ? n : 0
+    }
+    const res: any = await SdkService.rpc('getbans', [addr])
+    let active = false
+    if (Array.isArray(res)) {
+      for (const rec of res) {
+        const ending = typeof rec?.ending === 'number' ? rec.ending : Number(rec?.ending)
+        if (Number.isFinite(ending) && ending > (height || 0)) {
+          active = true
+          break
+        }
+      }
+    }
+    banActiveByAddress.value[addr] = active
+    return active
+  }
+  catch {
+    // On RPC failure, treat as not banned to avoid over-filtering
+    banActiveByAddress.value[addr] = false
+    return false
+  }
 }
-const peerMetaByKey = ref<Record<string, PeerMeta>>({})
 
-// Lazy rendering state: visible count per hash
-const visibleCountByHash = ref<Record<string, number>>({})
-function getVisibleCount(hash: string): number {
-  if (!visibleCountByHash.value[hash])
-    visibleCountByHash.value[hash] = 10
-  return visibleCountByHash.value[hash]
+// Filter out videos whose authors are currently banned
+async function filterOutBannedItems(arr: any[]): Promise<any[]> {
+  try {
+    const hres: any = await SdkService.rpc('getblockcount', [])
+    const height = typeof hres === 'number' ? hres : Number(hres)
+    // Resolve all addresses in parallel
+    const addrPromises = arr.map(async (it) => {
+      let addr = getAuthorAddress(it)
+      if (!addr) {
+        const hash = (it as any)?.rawPost?.video_hash
+        addr = await ensureAuthorAddressByHash(hash)
+      }
+      return addr as string | null
+    })
+    const addrs = await Promise.all(addrPromises)
+    const uniq = Array.from(new Set(addrs.filter(Boolean) as string[]))
+    // Query bans in parallel (cached in isAddressBanned)
+    await Promise.all(uniq.map(a => isAddressBanned(a, height)))
+    // Filter items by cached ban status
+    return arr.filter((it, idx) => {
+      const a = addrs[idx]
+      return !a || !banActiveByAddress.value[a]
+    })
+  }
+  catch {
+    // If height fetch fails, keep original array (fail-open)
+    return arr
+  }
 }
+
+// Descriptions cache (by post hash)
+interface DescState { text: string, caption?: string, loading: boolean, error: string | null, fetchedAt: number }
+const descriptionsByHash = ref<Record<string, DescState>>({})
 
 // Ensure we know the author address for a given hash (without fetching reputation)
 async function ensureAuthorAddressByHash(hash: string): Promise<string | null> {
@@ -2003,7 +2063,11 @@ async function loadPlaylist() {
       loaded = await res.json()
 
     const mapped = Array.isArray(loaded) ? loaded.map(normalizeItem) : []
-    items.value = mapped.filter((it: VideoItem) => !!getHls(it))
+    // Keep only items with playable HLS
+    const withHls = mapped.filter((it: VideoItem) => !!getHls(it))
+    // Remove videos by authors with an active ban
+    const filtered = await filterOutBannedItems(withHls)
+    items.value = filtered
     videoLoading.value = items.value.map(() => false)
     progress.value = items.value.map(() => ({ currentTime: 0, duration: 0 }))
     buffered.value = items.value.map(() => ({ ranges: [], duration: 0 }))
@@ -3174,6 +3238,11 @@ watch(endBehavior, (val) => {
   opacity: 0.9;
   font-size: 0.95rem;
   cursor: pointer;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .desc-meta {
   opacity: 0.8;
