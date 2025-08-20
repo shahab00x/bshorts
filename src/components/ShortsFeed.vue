@@ -219,37 +219,53 @@ async function filterOutDeletedAndBannedItems(arr: any[]): Promise<any[]> {
   const addrByHashLocal: Record<string, string> = {}
   try {
     if (hashes.length) {
-      const res: any = await SdkService.rpc('getcontent', [hashes, ''])
-      const list: any[] = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : [])
-      for (const rec of list) {
-        const h = (rec?.hash || rec?.video_hash || rec?.txid || rec?.id || '').toString()
-        if (h) {
-          const typeStr = String((rec as any)?.type || (rec as any)?.Type || '').toLowerCase()
-          const d = (rec as any)?.deleted
-          const isDeleted = (
-            d === true
-            || d === 'true'
-            || d === 1
-            || String(d).toLowerCase() === 'yes'
-            || typeStr === 'contentdelete'
-          )
-          deletedByHash[h] = !!isDeleted
+      // Sequentially query each hash to avoid sending the whole playlist at once
+      for (const h0 of hashes) {
+        try {
+          const resOne: any = await SdkService.rpc('getcontent', [[h0], ''])
+          const rec: any = Array.isArray(resOne)
+            ? resOne[0]
+            : (Array.isArray(resOne?.data) ? resOne.data[0] : undefined)
+          if (!rec)
+            continue
+          const h = (rec?.hash || rec?.video_hash || rec?.txid || rec?.id || '').toString()
+          if (h) {
+            const typeStr = String((rec as any)?.type || (rec as any)?.Type || '').toLowerCase()
+            const d = (rec as any)?.deleted
+            const isDeleted = (
+              d === true
+              || d === 'true'
+              || d === 1
+              || String(d).toLowerCase() === 'yes'
+              || typeStr === 'contentdelete'
+            )
+            deletedByHash[h] = !!isDeleted
+            // Also record under the original request hash if it differs
+            if (h0 && h0 !== h)
+              deletedByHash[h0] = !!isDeleted
+          }
+          const addr = rec?.address || rec?.Address || rec?.adr
+          if (typeof addr === 'string' && addr) {
+            addrByHashLocal[h0] = addr
+            if (!addressByHash.value[h0])
+              addressByHash.value[h0] = addr
+            // Keep a mapping for the canonical hash as well
+            if (h && !addressByHash.value[h])
+              addressByHash.value[h] = addr
+            if (h && h !== h0)
+              addrByHashLocal[h] = addr
+          }
+          // If bans info present on the content record, compute active state now
+          if (addr && rec?.bans && typeof rec.bans === 'object') {
+            const endings = Object.values(rec.bans).map((v: any) => Number(v)).filter((v: any) => Number.isFinite(v))
+            const active = endings.some((end: number) => end > (height || 0))
+            if (active)
+              banActiveByAddress.value[addr] = true
+            else if (banActiveByAddress.value[addr] == null)
+              banActiveByAddress.value[addr] = false
+          }
         }
-        const addr = rec?.address || rec?.Address || rec?.adr
-        if (typeof addr === 'string' && addr) {
-          addrByHashLocal[h] = addr
-          if (!addressByHash.value[h])
-            addressByHash.value[h] = addr
-        }
-        // If bans info present on the content record, compute active state now
-        if (addr && rec?.bans && typeof rec.bans === 'object') {
-          const endings = Object.values(rec.bans).map((v: any) => Number(v)).filter((v: any) => Number.isFinite(v))
-          const active = endings.some((end: number) => end > (height || 0))
-          if (active)
-            banActiveByAddress.value[addr] = true
-          else if (banActiveByAddress.value[addr] == null)
-            banActiveByAddress.value[addr] = false
-        }
+        catch {}
       }
     }
   }
