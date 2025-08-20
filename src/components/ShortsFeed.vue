@@ -2670,8 +2670,12 @@ watch(endBehavior, (val) => {
               </button>
             </div>
             <div class="desc" title="View description" @click.stop="openDescriptionDrawer">
-              {{ overlayPreviewFor(vi.item) }}
-              <span v-if="peerMetaString(vi.item)" class="desc-meta"> · {{ peerMetaString(vi.item) }}</span>
+              <div class="desc-text-trunc">
+                {{ overlayPreviewFor(vi.item) }}
+              </div>
+              <div v-if="peerMetaString(vi.item)" class="desc-meta-row">
+                {{ peerMetaString(vi.item) }}
+              </div>
             </div>
           </div>
           <div class="seekbar">
@@ -3331,11 +3335,19 @@ watch(endBehavior, (val) => {
   opacity: 0.9;
   font-size: 0.95rem;
   cursor: pointer;
+}
+.desc-text-trunc {
   display: -webkit-box;
   -webkit-line-clamp: 3;
   line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.desc-meta-row {
+  opacity: 0.8;
+  font-size: 0.9em;
+  color: rgba(255, 255, 255, 0.85);
+  margin-top: 4px;
 }
 .desc-meta {
   opacity: 0.8;
