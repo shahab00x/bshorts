@@ -710,31 +710,80 @@ function formatCount(n: number): string {
   return String(n)
 }
 
-function formatRelativeTime(iso?: string | null): string {
-  if (!iso)
+// New: format an ISO string or epoch milliseconds into a full date like "15 June 2024"
+function formatFullDate(input?: string | number | null): string {
+  if (input == null || input === '')
     return ''
-  const t = Date.parse(iso)
-  if (!Number.isFinite(t))
+  let timeMs: number | null = null
+  if (typeof input === 'number') {
+    timeMs = Number.isFinite(input) ? input : null
+  }
+  else if (typeof input === 'string') {
+    const maybeNum = Number(input)
+    if (Number.isFinite(maybeNum) && input.trim() !== '') {
+      timeMs = maybeNum
+    }
+    else {
+      const t = Date.parse(input)
+      timeMs = Number.isFinite(t) ? t : null
+    }
+  }
+  if (timeMs == null)
     return ''
-  const now = Date.now()
-  const diff = Math.max(0, now - t)
-  const sec = Math.floor(diff / 1000)
-  if (sec < 60)
-    return `${sec}s ago`
-  const min = Math.floor(sec / 60)
-  if (min < 60)
-    return `${min}m ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 24)
-    return `${hr}h ago`
-  const day = Math.floor(hr / 24)
-  if (day < 30)
-    return `${day}d ago`
-  const mo = Math.floor(day / 30)
-  if (mo < 12)
-    return `${mo}mo ago`
-  const yr = Math.floor(mo / 12)
-  return `${yr}y ago`
+  const d = new Date(timeMs)
+  if (Number.isNaN(d.getTime()))
+    return ''
+  // Use user's locale if available
+  const fmt = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
+  return fmt.format(d)
+}
+
+// Extract a best-effort timestamp (ms) from a comment/reply object
+function getCommentTimestampMs(c: any): number | null {
+  if (!c || typeof c !== 'object')
+    return null
+  const fields = ['time', 'timestamp', 'ts', 'created', 'createdAt', 'date', 'publishedAt', 'posted', 'when']
+  for (const f of fields) {
+    const v: any = (c as any)[f]
+    if (v == null)
+      continue
+    if (typeof v === 'number') {
+      // Heuristic: values < 1e12 are likely seconds
+      const ms = v < 1e12 ? (v * 1000) : v
+      if (Number.isFinite(ms))
+        return ms
+    }
+    else if (typeof v === 'string') {
+      const trimmed = v.trim()
+      if (!trimmed)
+        continue
+      const asNum = Number(trimmed)
+      if (Number.isFinite(asNum)) {
+        const ms = asNum < 1e12 ? (asNum * 1000) : asNum
+        if (Number.isFinite(ms))
+          return ms
+      }
+      const t = Date.parse(trimmed)
+      if (Number.isFinite(t))
+        return t
+    }
+  }
+  // Fallback: nested common containers
+  const containers = ['comment', 'data']
+  for (const key of containers) {
+    const v = (c as any)[key]
+    if (v && typeof v === 'object') {
+      const nested = getCommentTimestampMs(v)
+      if (nested != null)
+        return nested
+    }
+  }
+  return null
+}
+
+function commentDateFor(c: any): string {
+  const ms = getCommentTimestampMs(c)
+  return ms != null ? formatFullDate(ms) : ''
 }
 
 // Fetch author address (if needed) and reputation for a given content hash
@@ -2492,9 +2541,9 @@ function peerMetaString(item: any): string {
   const parts: string[] = []
   if (st.views != null)
     parts.push(`${formatCount(st.views)} views`)
-  const rel = formatRelativeTime(st.publishedAt)
-  if (rel)
-    parts.push(rel)
+  const full = formatFullDate(st.publishedAt || '')
+  if (full)
+    parts.push(full)
   return parts.join(' · ')
 }
 
@@ -2824,6 +2873,7 @@ watch(endBehavior, (val) => {
                 <div class="comment-main">
                   <div class="comment-author">
                     {{ commentNameFor(c) }}
+                    <span v-if="commentDateFor(c)" class="comment-date"> · {{ commentDateFor(c) }}</span>
                   </div>
                   <div class="comment-text" @click="onDescHtmlClick" v-html="linkify(getCommentText(c))" />
                   <div v-if="extractImageUrls(c).length" class="comment-media">
@@ -2868,6 +2918,7 @@ watch(endBehavior, (val) => {
                           <div class="comment-main">
                             <div class="comment-author">
                               {{ commentNameFor(rc) }}
+                              <span v-if="commentDateFor(rc)" class="comment-date"> · {{ commentDateFor(rc) }}</span>
                             </div>
                             <div class="comment-text" @click="onDescHtmlClick" v-html="linkify(getCommentText(rc))" />
                             <div v-if="extractImageUrls(rc).length" class="comment-media">
@@ -3647,6 +3698,13 @@ watch(endBehavior, (val) => {
   font-size: 13px;
   font-weight: 600;
   opacity: 0.95;
+}
+.comment-date {
+  opacity: 0.8;
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
 }
 .comment-text {
   line-height: 1.35;
