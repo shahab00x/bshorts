@@ -141,6 +141,10 @@ const addressByHash = ref<Record<string, string>>({})
 const repLoadingByHash = ref<Record<string, boolean>>({})
 const repErrorByHash = ref<Record<string, string | null>>({})
 
+// Descriptions cache (by post hash)
+interface DescState { text: string, loading: boolean, error: string | null, fetchedAt: number }
+const descriptionsByHash = ref<Record<string, DescState>>({})
+
 // Follow state (by address)
 const followedByAddress = ref<Record<string, boolean>>({})
 const followLoadingByAddress = ref<Record<string, boolean>>({})
@@ -1120,6 +1124,13 @@ function refreshComments() {
   void fetchCommentsFor(h, { force: true })
 }
 
+function refreshDescription() {
+  const h = currentVideoHash.value
+  if (!h)
+    return
+  void fetchDescriptionFor(h, { force: true })
+}
+
 // Load comments when opening the drawer or switching videos while open
 watch(showCommentsDrawer, (open) => {
   if (open)
@@ -1130,6 +1141,18 @@ watch(showCommentsDrawer, (open) => {
       visibleCountByHash.value[h] = 10
     if (h)
       void ensureAvatarsReadyForHash(h)
+  }
+})
+// Prefetch description on video change and when opening the desc drawer
+watch(currentVideoHash, (h) => {
+  if (h)
+    void fetchDescriptionFor(h)
+})
+watch(showDescriptionDrawer, (open) => {
+  if (open) {
+    const h = currentVideoHash.value
+    if (h)
+      void fetchDescriptionFor(h)
   }
 })
 watch(currentIndex, () => {
@@ -1206,6 +1229,51 @@ function getDescription(it: any): string {
     ?? it?.description
     ?? ''
   )
+}
+
+// Description fetching and cache helpers
+function ensureDescState(hash: string): DescState {
+  if (!descriptionsByHash.value[hash])
+    descriptionsByHash.value[hash] = { text: '', loading: false, error: null, fetchedAt: 0 }
+  return descriptionsByHash.value[hash]
+}
+
+async function fetchDescriptionFor(hash: string, { force = false }: { force?: boolean } = {}) {
+  if (!hash)
+    return
+  const st = ensureDescState(hash)
+  if (st.loading)
+    return
+  if (!force && st.text && !st.error)
+    return
+  st.loading = true
+  st.error = null
+  try {
+    const res: any = await SdkService.rpc('getcontent', [[hash], ''])
+    let text = ''
+    if (Array.isArray(res) && res.length > 0) {
+      const rec = res[0]
+      // Prefer explicit description fields then parse common RPC payloads
+      text = (
+        rec?.description
+        || rec?.desc
+        || rec?.caption
+        || getCommentText(rec?.msg)
+        || getCommentText(rec?.message)
+        || getCommentText(rec?.data)
+        || getCommentText(rec?.body)
+        || ''
+      )
+    }
+    st.text = typeof text === 'string' ? text : ''
+    st.fetchedAt = Date.now()
+  }
+  catch (e: any) {
+    st.error = e?.message || String(e)
+  }
+  finally {
+    st.loading = false
+  }
 }
 function parseHashtags(val: any): string[] {
   if (!val)
@@ -1360,7 +1428,11 @@ function extractImageUrls(c: any): string[] {
 }
 
 const descCaption = computed(() => getCaption(currentItem.value))
-const descText = computed(() => getDescription(currentItem.value))
+const currentDescState = computed(() => {
+  const h = currentVideoHash.value
+  return h ? descriptionsByHash.value[h] : undefined
+})
+const descText = computed(() => currentDescState.value?.text || getDescription(currentItem.value))
 const descHtml = computed(() => linkify(descText.value || ''))
 const descTags = computed(() => parseHashtags(currentItem.value?.rawPost?.hashtags ?? (currentItem.value as any)?.hashtags))
 
@@ -2518,7 +2590,21 @@ watch(endBehavior, (val) => {
             {{ descCaption }}
             <span v-if="peerMetaString(currentItem)" class="desc-meta"> · {{ peerMetaString(currentItem) }}</span>
           </div>
-          <div class="desc-text" @click="onDescHtmlClick" v-html="descHtml" />
+          <div v-if="!currentVideoHash" class="center-msg">
+            No post id
+          </div>
+          <div v-else-if="currentDescState?.loading" class="center-msg">
+            <LoadingSpinner :size="32" aria-label="Loading description" />
+          </div>
+          <div v-else-if="currentDescState?.error" class="center-msg text-red">
+            {{ currentDescState?.error }}
+            <div style="margin-top: 8px;">
+              <button class="retry-btn" @click="refreshDescription">
+                Retry
+              </button>
+            </div>
+          </div>
+          <div v-else class="desc-text" @click="onDescHtmlClick" v-html="descHtml" />
           <div v-if="descTags.length" class="hashtags-row">
             <a
               v-for="(tag, i) in descTags"
