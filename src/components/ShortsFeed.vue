@@ -7,7 +7,123 @@ import LoadingSpinner from '~/components/LoadingSpinner.vue'
 import { appConfig } from '~/config'
 import { SdkService } from '~/composables'
 
+// Moved up: caches used by validators and helpers to satisfy no-use-before-define
+const avatarsByAddress = ref<Record<string, string>>({})
+const namesByAddress = ref<Record<string, string>>({})
+const reputationsByAddress = ref<Record<string, number>>({})
+const addressByHash = ref<Record<string, string>>({})
+const repLoadingByHash = ref<Record<string, boolean>>({})
+const repErrorByHash = ref<Record<string, string | null>>({})
+const banActiveByAddress = ref<Record<string, boolean>>({})
+const deletedByHash = ref<Record<string, boolean>>({})
+const itemValidByHash = ref<Record<string, boolean | null>>({})
+const validatingByHash = ref<Record<string, boolean>>({})
+
 interface PeertubeInfo { hlsUrl: string, apiUrl?: string }
+
+// Helper: get Bastyon video hash from item
+function getVideoHash(it: any): string | null {
+  const h = it?.rawPost?.video_hash
+  return (typeof h === 'string' && h) ? h : null
+}
+
+// Read-only validity state for an item (cached)
+function itemValid(it: any): boolean | null {
+  const h = getVideoHash(it)
+  if (!h)
+    return true
+  const st = itemValidByHash.value[h]
+  return (st == null ? null : st)
+}
+
+// Lazy per-item validation: fetch content, update caches, and resolve validity
+async function validateItem(it: any): Promise<boolean> {
+  const hash = getVideoHash(it)
+  if (!hash)
+    return true
+  const cached = itemValidByHash.value[hash]
+  if (cached != null)
+    return !!cached
+  if (validatingByHash.value[hash])
+    return !!(itemValidByHash.value[hash] ?? true)
+
+  validatingByHash.value[hash] = true
+  try {
+    // Current height used for bans comparison
+    let height = 0
+    try {
+      const hres: any = await SdkService.rpc('getblockcount', [])
+      const n = typeof hres === 'number' ? hres : Number(hres)
+      height = Number.isFinite(n) ? n : 0
+    }
+    catch {}
+
+    // Fetch content for this hash
+    try {
+      const resOne: any = await SdkService.rpc('getcontent', [[hash], ''])
+      const rec: any = Array.isArray(resOne)
+        ? resOne[0]
+        : (Array.isArray(resOne?.data) ? resOne.data[0] : undefined)
+      if (rec) {
+        const h = (rec?.hash || rec?.video_hash || rec?.txid || rec?.id || '').toString()
+        const typeStr = String((rec as any)?.type || (rec as any)?.Type || '').toLowerCase()
+        const d = (rec as any)?.deleted
+        const isDeleted = (
+          d === true
+          || d === 'true'
+          || d === 1
+          || String(d).toLowerCase() === 'yes'
+          || typeStr === 'contentdelete'
+        )
+        if (h)
+          deletedByHash.value[h] = !!isDeleted
+        if (h && h !== hash)
+          deletedByHash.value[hash] = !!isDeleted
+
+        const addr = rec?.address || rec?.Address || rec?.adr
+        if (typeof addr === 'string' && addr) {
+          if (!addressByHash.value[hash])
+            addressByHash.value[hash] = addr
+          if (h && !addressByHash.value[h])
+            addressByHash.value[h] = addr
+          // Compute ban state from inline bans map if present
+          if (rec?.bans && typeof rec.bans === 'object') {
+            const endings = Object.values(rec.bans).map((v: any) => Number(v)).filter((v: any) => Number.isFinite(v))
+            const active = endings.some((end: number) => end > (height || 0))
+            if (active)
+              banActiveByAddress.value[addr] = true
+            else if (banActiveByAddress.value[addr] == null)
+              banActiveByAddress.value[addr] = false
+          }
+        }
+      }
+    }
+    catch {}
+
+    // Evaluate validity using cached state and ban checks
+    const del = !!deletedByHash.value[hash]
+    let banned = false
+    const direct = getAuthorAddress(it)
+    const addr = direct || addressByHash.value[hash] || null
+    if (addr) {
+      if (banActiveByAddress.value[addr] == null)
+        banned = await isAddressBanned(addr, undefined)
+      else
+        banned = !!banActiveByAddress.value[addr]
+    }
+    const ok = !del && !banned
+    itemValidByHash.value[hash] = ok
+    return ok
+  }
+  catch {
+    // On any validation error, treat as valid to avoid blocking feed
+    itemValidByHash.value[hash] = true
+    return true
+  }
+  finally {
+    validatingByHash.value[hash] = false
+  }
+}
 
 interface VideoItem {
   description?: string
@@ -131,17 +247,7 @@ interface CommentState {
 }
 const commentsByHash = ref<Record<string, CommentState>>({})
 
-// Avatars cache (by address)
-const avatarsByAddress = ref<Record<string, string>>({})
-// Names cache (by address)
-const namesByAddress = ref<Record<string, string>>({})
-// Reputation caches
-const reputationsByAddress = ref<Record<string, number>>({})
-const addressByHash = ref<Record<string, string>>({})
-const repLoadingByHash = ref<Record<string, boolean>>({})
-const repErrorByHash = ref<Record<string, string | null>>({})
-// Ban status cache (by address)
-const banActiveByAddress = ref<Record<string, boolean>>({})
+// (moved above) avatars/names/reputation/address/ban/deleted/item-valid caches
 
 // Avatars readiness state per post hash (used by comments drawer)
 const avatarsReadyByHash = ref<Record<string, boolean>>({})
@@ -198,103 +304,7 @@ async function isAddressBanned(addr?: string | null, currentHeight?: number): Pr
   }
 }
 
-// Filter out deleted posts and videos whose authors are currently banned
-async function filterOutDeletedAndBannedItems(arr: any[]): Promise<any[]> {
-  if (!Array.isArray(arr) || !arr.length)
-    return arr
-  // Get current height for ban comparison
-  let height = 0
-  try {
-    const hres: any = await SdkService.rpc('getblockcount', [])
-    const n = typeof hres === 'number' ? hres : Number(hres)
-    height = Number.isFinite(n) ? n : 0
-  }
-  catch {}
-
-  // Batch query content metadata to detect deletions and inline bans info
-  const hashes = Array.from(new Set(
-    arr.map((it: any) => it?.rawPost?.video_hash).filter((h: any) => typeof h === 'string' && !!h),
-  )) as string[]
-  const deletedByHash: Record<string, boolean> = {}
-  const addrByHashLocal: Record<string, string> = {}
-  try {
-    if (hashes.length) {
-      // Sequentially query each hash to avoid sending the whole playlist at once
-      for (const h0 of hashes) {
-        try {
-          const resOne: any = await SdkService.rpc('getcontent', [[h0], ''])
-          const rec: any = Array.isArray(resOne)
-            ? resOne[0]
-            : (Array.isArray(resOne?.data) ? resOne.data[0] : undefined)
-          if (!rec)
-            continue
-          const h = (rec?.hash || rec?.video_hash || rec?.txid || rec?.id || '').toString()
-          if (h) {
-            const typeStr = String((rec as any)?.type || (rec as any)?.Type || '').toLowerCase()
-            const d = (rec as any)?.deleted
-            const isDeleted = (
-              d === true
-              || d === 'true'
-              || d === 1
-              || String(d).toLowerCase() === 'yes'
-              || typeStr === 'contentdelete'
-            )
-            deletedByHash[h] = !!isDeleted
-            // Also record under the original request hash if it differs
-            if (h0 && h0 !== h)
-              deletedByHash[h0] = !!isDeleted
-          }
-          const addr = rec?.address || rec?.Address || rec?.adr
-          if (typeof addr === 'string' && addr) {
-            addrByHashLocal[h0] = addr
-            if (!addressByHash.value[h0])
-              addressByHash.value[h0] = addr
-            // Keep a mapping for the canonical hash as well
-            if (h && !addressByHash.value[h])
-              addressByHash.value[h] = addr
-            if (h && h !== h0)
-              addrByHashLocal[h] = addr
-          }
-          // If bans info present on the content record, compute active state now
-          if (addr && rec?.bans && typeof rec.bans === 'object') {
-            const endings = Object.values(rec.bans).map((v: any) => Number(v)).filter((v: any) => Number.isFinite(v))
-            const active = endings.some((end: number) => end > (height || 0))
-            if (active)
-              banActiveByAddress.value[addr] = true
-            else if (banActiveByAddress.value[addr] == null)
-              banActiveByAddress.value[addr] = false
-          }
-        }
-        catch {}
-      }
-    }
-  }
-  catch {}
-
-  // Fallback: check bans for any addresses without a known status
-  const addrsToCheck = new Set<string>()
-  for (const it of arr as any[]) {
-    const hash = it?.rawPost?.video_hash
-    const direct = getAuthorAddress(it)
-    const addr = direct || (hash ? (addrByHashLocal[hash] || addressByHash.value[hash]) : null)
-    if (addr && banActiveByAddress.value[addr] == null)
-      addrsToCheck.add(addr)
-  }
-  if (addrsToCheck.size)
-    await Promise.all(Array.from(addrsToCheck).map(a => isAddressBanned(a, height)))
-
-  // Finally filter
-  return arr.filter((it: any) => {
-    const hash = it?.rawPost?.video_hash
-    if (hash && deletedByHash[hash])
-      return false
-    const direct = getAuthorAddress(it)
-    const addr = direct || (hash ? (addrByHashLocal[hash] || addressByHash.value[hash]) : null)
-    if (addr && banActiveByAddress.value[addr])
-      return false
-    return true
-  })
-}
+// (removed) legacy filterOutDeletedAndBannedItems was unused; replaced by lazy per-item validation
 
 // Descriptions cache (by post hash)
 interface DescState { text: string, caption?: string, loading: boolean, error: string | null, fetchedAt: number }
@@ -1925,6 +1935,15 @@ const visibleIndices = computed(() =>
 )
 const visibleItems = computed(() => visibleIndices.value.map(idx => ({ idx, item: items.value[idx] })))
 
+// Proactively validate items that enter the visible window
+watch(visibleIndices, (indices) => {
+  for (const idx of indices) {
+    const it = items.value[idx]
+    if (it && itemValid(it) == null)
+      void validateItem(it)
+  }
+}, { immediate: true })
+
 function clamp01(n: number) {
   return Math.max(0, Math.min(1, n))
 }
@@ -1977,10 +1996,29 @@ function shouldLoad(idx: number) {
   // Load previous 1 and next N (from appConfig.preloadAhead)
   const start = Math.max(0, currentIndex.value - 1)
   const end = currentIndex.value + appConfig.preloadAhead
-  return idx >= start && idx <= end
+  const inRange = idx >= start && idx <= end
+  if (!inRange)
+    return false
+  const it = items.value[idx]
+  if (!it)
+    return false
+  const st = itemValid(it)
+  if (st === false)
+    return false
+  if (st == null) {
+    void validateItem(it)
+    return false
+  }
+  return true
 }
 
 function shouldPlay(idx: number) {
+  const it = items.value[idx]
+  if (!it)
+    return false
+  const st = itemValid(it)
+  if (st !== true)
+    return false
   return idx === currentIndex.value && !paused.value
 }
 
@@ -2206,10 +2244,8 @@ async function loadPlaylist() {
     const mapped = Array.isArray(loaded) ? loaded.map(normalizeItem) : []
     // Keep only items with playable HLS
     const withHls = mapped.filter((it: VideoItem) => !!getHls(it))
-    // Remove deleted posts and videos by authors with an active ban
-    const filtered = await filterOutDeletedAndBannedItems(withHls)
-    // Randomize order so refresh shows a different sequence
-    const shuffled = shuffleArray(filtered)
+    // Do NOT upfront-filter; shuffle and let lazy validator handle invalid items
+    const shuffled = shuffleArray(withHls)
     items.value = shuffled
     videoLoading.value = items.value.map(() => false)
     progress.value = items.value.map(() => ({ currentTime: 0, duration: 0 }))
@@ -2658,7 +2694,7 @@ watch(endBehavior, (val) => {
         @click="onSectionClick(vi.idx)"
       >
         <HlsVideo
-          v-if="inWindow(vi.idx)"
+          v-if="inWindow(vi.idx) && itemValid(vi.item) !== false"
           :ref="(el) => setVideoRef(el, vi.idx)"
           :src="getHls(vi.item)!"
           :loop="endBehavior === 'replay'"
