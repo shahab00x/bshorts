@@ -354,6 +354,18 @@ function commentAvatarFor(c: any): string {
   return getAddressAvatar(resolveCommentAddress(c))
 }
 
+// Resolve author display name: prefer inline uploader, then cached profile name, then short address
+function authorNameFor(it: any): string {
+  const direct = (it?.uploader || (it?.rawPost as any)?.uploader || (it as any)?.author_name)
+  if (typeof direct === 'string' && direct.trim())
+    return direct.trim()
+  const addr = getResolvedAuthorAddress(it)
+  const cached = addr ? namesByAddress.value[addr] : ''
+  if (cached)
+    return cached
+  return shortAddress(addr) || 'Unknown'
+}
+
 function isAddressFollowed(addr?: string | null): boolean {
   return !!(addr && followedByAddress.value[addr])
 }
@@ -658,6 +670,10 @@ async function fetchAuthorReputationByHash(hash: string) {
     if (reputationsByAddress.value[addr] != null)
       return
 
+    // Ensure we also fetch profile (name/avatar) if missing
+    if (!(avatarsByAddress.value[addr] && namesByAddress.value[addr]))
+      await fetchProfiles(new Set([addr]))
+
     // Fetch reputation
     const st: any = await SdkService.rpc('getuserstate', [addr])
     const rep = typeof st?.reputation === 'number'
@@ -678,7 +694,7 @@ async function fetchAuthorReputationByHash(hash: string) {
 
 // Batch fetch profiles and cache avatar URLs by address
 async function fetchProfiles(addresses: Set<string>) {
-  const todo = Array.from(addresses).filter(a => a && !avatarsByAddress.value[a])
+  const todo = Array.from(addresses).filter(a => a && !(avatarsByAddress.value[a] && namesByAddress.value[a]))
   if (todo.length === 0)
     return
 
@@ -688,6 +704,7 @@ async function fetchProfiles(addresses: Set<string>) {
     try {
       const params: any[] = [chunk, '1'] // '1' => light profile
       const res: unknown = await SdkService.rpc('getuserprofile', params)
+      console.log('getuserprofile:', res)
       if (Array.isArray(res)) {
         for (const p of res) {
           const addr = p?.address
@@ -2379,7 +2396,7 @@ watch(endBehavior, (val) => {
                 </div>
               </div>
               <div class="uploader" title="Open profile" @click.stop="openAuthorChannel(vi.item)">
-                {{ vi.item.uploader || 'Unknown' }}
+                {{ authorNameFor(vi.item) }}
               </div>
               <button
                 v-if="appConfig.showFollowButton"
