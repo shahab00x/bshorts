@@ -2150,6 +2150,30 @@ function normalizeItem(rec: any): any {
   return out
 }
 
+// Shuffle a copy of the input array using Fisher–Yates algorithm
+function shuffleArray<T>(input: T[]): T[] {
+  const a = input.slice()
+  // Prefer cryptographically strong randomness if available
+  const rand = () => {
+    try {
+      if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+        const buf = new Uint32Array(1)
+        crypto.getRandomValues(buf)
+        return buf[0] / 0xFFFFFFFF
+      }
+    }
+    catch {}
+    return Math.random()
+  }
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    const tmp = a[i]
+    a[i] = a[j]
+    a[j] = tmp
+  }
+  return a
+}
+
 async function loadPlaylist() {
   try {
     loading.value = true
@@ -2168,7 +2192,9 @@ async function loadPlaylist() {
     const withHls = mapped.filter((it: VideoItem) => !!getHls(it))
     // Remove deleted posts and videos by authors with an active ban
     const filtered = await filterOutDeletedAndBannedItems(withHls)
-    items.value = filtered
+    // Randomize order so refresh shows a different sequence
+    const shuffled = shuffleArray(filtered)
+    items.value = shuffled
     videoLoading.value = items.value.map(() => false)
     progress.value = items.value.map(() => ({ currentTime: 0, duration: 0 }))
     buffered.value = items.value.map(() => ({ ranges: [], duration: 0 }))
