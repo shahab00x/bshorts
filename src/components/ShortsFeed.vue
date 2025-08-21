@@ -2711,6 +2711,34 @@ watch(visibleIndices, (idxs) => {
   }
 }, { immediate: true })
 
+// Autoskip: when the current item validates to false, jump forward to the next valid item
+const autoskipping = ref(false)
+watch(currentIndex, async (idx) => {
+  if (autoskipping.value)
+    return
+  const it = items.value[idx]
+  if (!it)
+    return
+
+  const ok = await validateItem(it)
+  if (ok)
+    return
+
+  autoskipping.value = true
+  try {
+    for (let i = idx + 1; i < items.value.length; i++) {
+      const cand = items.value[i]
+      if (cand && await validateItem(cand)) {
+        goToIndex(i)
+        break
+      }
+    }
+  }
+  finally {
+    autoskipping.value = false
+  }
+}, { immediate: true })
+
 watch(selectedLanguage, async (code) => {
   try {
     if (typeof localStorage !== 'undefined' && code)
