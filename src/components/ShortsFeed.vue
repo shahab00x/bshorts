@@ -3536,6 +3536,11 @@ watch(endBehavior, (val) => {
   gap: 12px;
   z-index: 8;
 }
+@media (min-width: 1024px) {
+  .right-controls {
+    right: 24px;
+  }
+}
 .comments-btn {
   position: relative;
   width: 44px;

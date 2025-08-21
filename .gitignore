@@ -5,6 +5,7 @@
 dist
 dist-ssr
 node_modules
+public/playlists
 .idea/
 *.log
 .vscode
