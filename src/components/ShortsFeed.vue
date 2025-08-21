@@ -2751,180 +2751,182 @@ watch(endBehavior, (val) => {
       @touchend="onTouchEnd"
       @keydown="onKeyDown"
     >
-      <section
-        v-for="vi in visibleItems"
-        :key="vi.idx"
-        :ref="(el) => setCardRef(el as HTMLElement | null, vi.idx)"
-        class="pager-item"
-        :class="{ 'is-current': vi.idx === currentIndex, 'is-prev': vi.idx < currentIndex, 'is-next': vi.idx > currentIndex }"
-        :data-idx="vi.idx"
-        @click="onSectionClick(vi.idx)"
-      >
-        <HlsVideo
-          v-if="inWindow(vi.idx) && itemValid(vi.item) !== false"
-          :ref="(el) => setVideoRef(el, vi.idx)"
-          :src="getHls(vi.item)!"
-          :loop="endBehavior === 'replay'"
-          :muted="!(soundOn && vi.idx === currentIndex && !paused)"
-          :should-load="shouldLoad(vi.idx)"
-          :should-play="shouldPlay(vi.idx)"
-          @loading-change="onVideoLoadingChange(vi.idx, $event)"
-          @progress="onVideoProgress(vi.idx, $event)"
-          @buffered="onVideoBuffered(vi.idx, $event)"
-          @ended="onVideoEnded(vi.idx)"
-        />
-        <div v-else class="video-placeholder" />
-
-        <!-- Sensitive content overlay -->
-        <div
-          v-if="itemValid(vi.item) === true && isSensitiveBlocked(vi.item)"
-          class="overlay-sensitive"
-          role="dialog"
-          aria-live="polite"
+      <template v-for="vi in visibleItems">
+        <section
+          v-if="itemValid(vi.item) !== false"
+          :key="vi.idx"
+          :ref="(el) => setCardRef(el as HTMLElement | null, vi.idx)"
+          class="pager-item"
+          :class="{ 'is-current': vi.idx === currentIndex, 'is-prev': vi.idx < currentIndex, 'is-next': vi.idx > currentIndex }"
+          :data-idx="vi.idx"
+          @click="onSectionClick(vi.idx)"
         >
-          <div class="sensitive-box">
-            <div class="sensitive-title">
-              Sensitive content
-            </div>
-            <div class="sensitive-desc">
-              This video has been flagged by the community. It may contain sensitive or disturbing content.
-            </div>
-            <div class="sensitive-actions">
-              <button class="watch-anyway-btn" @click.stop="watchAnyway(vi.item)">
-                Watch anyway
-              </button>
-              <div class="sensitive-hint">
-                Or swipe to the next video
+          <HlsVideo
+            v-if="inWindow(vi.idx) && itemValid(vi.item) !== false"
+            :ref="(el) => setVideoRef(el, vi.idx)"
+            :src="getHls(vi.item)!"
+            :loop="endBehavior === 'replay'"
+            :muted="!(soundOn && vi.idx === currentIndex && !paused)"
+            :should-load="shouldLoad(vi.idx)"
+            :should-play="shouldPlay(vi.idx)"
+            @loading-change="onVideoLoadingChange(vi.idx, $event)"
+            @progress="onVideoProgress(vi.idx, $event)"
+            @buffered="onVideoBuffered(vi.idx, $event)"
+            @ended="onVideoEnded(vi.idx)"
+          />
+          <div v-else class="video-placeholder" />
+
+          <!-- Sensitive content overlay -->
+          <div
+            v-if="itemValid(vi.item) === true && isSensitiveBlocked(vi.item)"
+            class="overlay-sensitive"
+            role="dialog"
+            aria-live="polite"
+          >
+            <div class="sensitive-box">
+              <div class="sensitive-title">
+                Sensitive content
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Debug performance overlay -->
-        <PerfOverlay
-          v-if="appConfig.debugPerfOverlay && vi.idx === currentIndex"
-          :video-el="videoRefs[vi.idx]?.el ?? null"
-          :is-current="vi.idx === currentIndex"
-        />
-
-        <!-- Centered play/pause icon shown on user toggle -->
-        <div class="overlay-center" :class="{ visible: showOverlayIcon }">
-          <div class="play-icon" aria-hidden="true">
-            <span v-if="paused">▶</span>
-            <span v-else>❚❚</span>
-          </div>
-        </div>
-        <!-- Loading spinner while video is loading/buffering -->
-        <div v-if="inWindow(vi.idx) && videoLoading[vi.idx]" class="overlay-loading">
-          <LoadingSpinner :size="72" aria-label="Loading video" />
-        </div>
-        <!-- Tap for sound prompt (only when sound is off for the current item) -->
-        <div v-if="vi.idx === currentIndex && !soundOn" class="overlay-sound">
-          <button class="sound-btn" aria-label="Tap for sound" @click.stop="enableSound">
-            Tap for sound
-          </button>
-        </div>
-        <div class="overlay">
-          <div class="meta">
-            <div class="author-row">
-              <div class="avatar-wrap" title="Open profile" @click.stop="openAuthorChannel(vi.item)">
-                <div class="avatar author-avatar" :style="{ backgroundImage: authorAvatarFor(vi.item) ? `url('${authorAvatarFor(vi.item)}')` : '' }">
-                  <span v-if="!authorAvatarFor(vi.item)" class="avatar-fallback">👤</span>
-                </div>
-                <div v-if="getAuthorReputation(vi.item) != null" class="reputation-badge">
-                  {{ formatReputation(getAuthorReputation(vi.item)!) }}
+              <div class="sensitive-desc">
+                This video has been flagged by the community. It may contain sensitive or disturbing content.
+              </div>
+              <div class="sensitive-actions">
+                <button class="watch-anyway-btn" @click.stop="watchAnyway(vi.item)">
+                  Watch anyway
+                </button>
+                <div class="sensitive-hint">
+                  Or swipe to the next video
                 </div>
               </div>
-              <div class="uploader" title="Open profile" @click.stop="openAuthorChannel(vi.item)">
-                {{ authorNameFor(vi.item) }}
-              </div>
-              <button
-                v-if="appConfig.showFollowButton"
-                class="follow-btn"
-                :class="{ following: isAuthorFollowed(vi.item), loading: isFollowLoading(vi.item) }"
-                :disabled="isFollowLoading(vi.item) || isAuthorFollowed(vi.item)"
-                aria-label="Follow author"
-                @click.stop="followAuthor(vi.item)"
-              >
-                {{ followBtnLabel(vi.item) }}
-              </button>
             </div>
-            <div class="desc" title="View description" @click.stop="openDescriptionDrawer">
-              <div class="desc-text-trunc">
-                {{ overlayPreviewFor(vi.item) }}
+          </div>
+
+          <!-- Debug performance overlay -->
+          <PerfOverlay
+            v-if="appConfig.debugPerfOverlay && vi.idx === currentIndex"
+            :video-el="videoRefs[vi.idx]?.el ?? null"
+            :is-current="vi.idx === currentIndex"
+          />
+
+          <!-- Centered play/pause icon shown on user toggle -->
+          <div class="overlay-center" :class="{ visible: showOverlayIcon }">
+            <div class="play-icon" aria-hidden="true">
+              <span v-if="paused">▶</span>
+              <span v-else>❚❚</span>
+            </div>
+          </div>
+          <!-- Loading spinner while video is loading/buffering -->
+          <div v-if="inWindow(vi.idx) && videoLoading[vi.idx]" class="overlay-loading">
+            <LoadingSpinner :size="72" aria-label="Loading video" />
+          </div>
+          <!-- Tap for sound prompt (only when sound is off for the current item) -->
+          <div v-if="vi.idx === currentIndex && !soundOn" class="overlay-sound">
+            <button class="sound-btn" aria-label="Tap for sound" @click.stop="enableSound">
+              Tap for sound
+            </button>
+          </div>
+          <div class="overlay">
+            <div class="meta">
+              <div class="author-row">
+                <div class="avatar-wrap" title="Open profile" @click.stop="openAuthorChannel(vi.item)">
+                  <div class="avatar author-avatar" :style="{ backgroundImage: authorAvatarFor(vi.item) ? `url('${authorAvatarFor(vi.item)}')` : '' }">
+                    <span v-if="!authorAvatarFor(vi.item)" class="avatar-fallback">👤</span>
+                  </div>
+                  <div v-if="getAuthorReputation(vi.item) != null" class="reputation-badge">
+                    {{ formatReputation(getAuthorReputation(vi.item)!) }}
+                  </div>
+                </div>
+                <div class="uploader" title="Open profile" @click.stop="openAuthorChannel(vi.item)">
+                  {{ authorNameFor(vi.item) }}
+                </div>
+                <button
+                  v-if="appConfig.showFollowButton"
+                  class="follow-btn"
+                  :class="{ following: isAuthorFollowed(vi.item), loading: isFollowLoading(vi.item) }"
+                  :disabled="isFollowLoading(vi.item) || isAuthorFollowed(vi.item)"
+                  aria-label="Follow author"
+                  @click.stop="followAuthor(vi.item)"
+                >
+                  {{ followBtnLabel(vi.item) }}
+                </button>
               </div>
-              <div v-if="peerMetaString(vi.item)" class="desc-meta-row">
-                {{ peerMetaString(vi.item) }}
+              <div class="desc" title="View description" @click.stop="openDescriptionDrawer">
+                <div class="desc-text-trunc">
+                  {{ overlayPreviewFor(vi.item) }}
+                </div>
+                <div v-if="peerMetaString(vi.item)" class="desc-meta-row">
+                  {{ peerMetaString(vi.item) }}
+                </div>
+              </div>
+            </div>
+            <div class="seekbar">
+              <div
+                class="seekbar-track"
+                @click.stop.prevent="onSeekClick(vi.idx, $event)"
+                @pointerdown="onSeekPointerDown(vi.idx, $event)"
+                @mousemove="onTrackHoverMove(vi.idx, $event)"
+                @mouseleave="onTrackHoverLeave"
+              >
+                <div
+                  v-for="(r, rIdx) in (buffered[vi.idx]?.ranges || [])"
+                  :key="rIdx"
+                  class="buffer-segment"
+                  :style="{
+                    left: buffered[vi.idx]?.duration
+                      ? `${((r.start / buffered[vi.idx].duration) * 100).toFixed(2)}%`
+                      : '0%',
+                    width: buffered[vi.idx]?.duration
+                      ? `${(((r.end - r.start) / buffered[vi.idx].duration) * 100).toFixed(2)}%`
+                      : '0%',
+                  }"
+                />
+                <div
+                  class="seekbar-fill"
+                  :style="{
+                    width: `${(
+                      progress[vi.idx]?.duration
+                        ? ((isScrubbing && scrubIdx === vi.idx)
+                          ? (scrubPct * 100)
+                          : Math.min(100, Math.max(0, (progress[vi.idx].currentTime / progress[vi.idx].duration) * 100)))
+                        : 0
+                    ).toFixed(2)}%`,
+                  }"
+                />
+                <div
+                  v-if="isScrubbing && scrubIdx === vi.idx"
+                  class="seekbar-thumb"
+                  :style="{
+                    left: `${(scrubPct * 100).toFixed(2)}%`,
+                  }"
+                />
+                <div
+                  v-if="showTooltip && tooltipIdx === vi.idx"
+                  class="seekbar-tooltip"
+                  :style="{ left: `${(tooltipPct * 100).toFixed(2)}%` }"
+                >
+                  {{ formatTime((progress[vi.idx]?.duration || buffered[vi.idx]?.duration || 0) * tooltipPct) }}
+                </div>
               </div>
             </div>
           </div>
-          <div class="seekbar">
-            <div
-              class="seekbar-track"
-              @click.stop.prevent="onSeekClick(vi.idx, $event)"
-              @pointerdown="onSeekPointerDown(vi.idx, $event)"
-              @mousemove="onTrackHoverMove(vi.idx, $event)"
-              @mouseleave="onTrackHoverLeave"
-            >
-              <div
-                v-for="(r, rIdx) in (buffered[vi.idx]?.ranges || [])"
-                :key="rIdx"
-                class="buffer-segment"
-                :style="{
-                  left: buffered[vi.idx]?.duration
-                    ? `${((r.start / buffered[vi.idx].duration) * 100).toFixed(2)}%`
-                    : '0%',
-                  width: buffered[vi.idx]?.duration
-                    ? `${(((r.end - r.start) / buffered[vi.idx].duration) * 100).toFixed(2)}%`
-                    : '0%',
-                }"
-              />
-              <div
-                class="seekbar-fill"
-                :style="{
-                  width: `${(
-                    progress[vi.idx]?.duration
-                      ? ((isScrubbing && scrubIdx === vi.idx)
-                        ? (scrubPct * 100)
-                        : Math.min(100, Math.max(0, (progress[vi.idx].currentTime / progress[vi.idx].duration) * 100)))
-                      : 0
-                  ).toFixed(2)}%`,
-                }"
-              />
-              <div
-                v-if="isScrubbing && scrubIdx === vi.idx"
-                class="seekbar-thumb"
-                :style="{
-                  left: `${(scrubPct * 100).toFixed(2)}%`,
-                }"
-              />
-              <div
-                v-if="showTooltip && tooltipIdx === vi.idx"
-                class="seekbar-tooltip"
-                :style="{ left: `${(tooltipPct * 100).toFixed(2)}%` }"
-              >
-                {{ formatTime((progress[vi.idx]?.duration || buffered[vi.idx]?.duration || 0) * tooltipPct) }}
-              </div>
-            </div>
+          <!-- Right-side controls -->
+          <div v-if="vi.idx === currentIndex" class="right-controls">
+            <button class="comments-btn" aria-label="Open comments" @click.stop="toggleCommentsDrawer">
+              💬
+              <span v-if="commentsCount" class="comments-badge">{{ commentsCount }}</span>
+            </button>
+            <button class="open-post-btn" aria-label="Open full post" title="Open full post" @click.stop="openCommentsInHost">
+              🗖
+            </button>
+            <button class="settings-btn" aria-label="Open settings" title="Open settings" @click.stop="openSettingsDrawer">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M11.049 2.927c.3-1.14 1.975-1.14 2.275 0a1.724 1.724 0 002.573 1.066c.99-.57 2.233.386 1.946 1.47a1.724 1.724 0 001.001 2.088c1.09.45 1.09 2.05 0 2.5a1.724 1.724 0 00-1.001 2.088c.287 1.084-.956 2.04-1.946 1.47a1.724 1.724 0 00-2.573 1.066c-.3 1.14-1.975 1.14-2.275 0a1.724 1.724 0 00-2.573-1.066c-.99.57-2.233-.386-1.946-1.47a1.724 1.724 0 00-1.001-2.088c-1.09-.45-1.09-2.05 0-2.5.587-.242 1.004-.74 1.001-2.088-.287-1.084.956-2.04 1.946-1.47.626.361 1.406.182 2.573-1.066z" />
+                <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
           </div>
-        </div>
-        <!-- Right-side controls -->
-        <div v-if="vi.idx === currentIndex" class="right-controls">
-          <button class="comments-btn" aria-label="Open comments" @click.stop="toggleCommentsDrawer">
-            💬
-            <span v-if="commentsCount" class="comments-badge">{{ commentsCount }}</span>
-          </button>
-          <button class="open-post-btn" aria-label="Open full post" title="Open full post" @click.stop="openCommentsInHost">
-            🗖
-          </button>
-          <button class="settings-btn" aria-label="Open settings" title="Open settings" @click.stop="openSettingsDrawer">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M11.049 2.927c.3-1.14 1.975-1.14 2.275 0a1.724 1.724 0 002.573 1.066c.99-.57 2.233.386 1.946 1.47a1.724 1.724 0 001.001 2.088c1.09.45 1.09 2.05 0 2.5a1.724 1.724 0 00-1.001 2.088c.287 1.084-.956 2.04-1.946 1.47a1.724 1.724 0 00-2.573 1.066c-.3 1.14-1.975 1.14-2.275 0a1.724 1.724 0 00-2.573-1.066c-.99.57-2.233-.386-1.946-1.47a1.724 1.724 0 00-1.001-2.088c-1.09-.45-1.09-2.05 0-2.5.587-.242 1.004-.74 1.001-2.088-.287-1.084.956-2.04 1.946-1.47.626.361 1.406.182 2.573-1.066z" />
-              <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
-        </div>
-      </section>
+        </section>
+      </template>
     </div>
     <!-- Screen tint overlay when any drawer is open -->
     <div
