@@ -13,7 +13,7 @@ export const appConfig = {
   // If total flags are between 1 and (flagsHideThreshold - 1), show a
   // "Sensitive content" overlay with a "Watch anyway" button.
   // Set to a high value to be conservative; set to 0 to disable hiding entirely.
-  flagsHideThreshold: 6,
+  flagsHideThreshold: 3,
   // Show "Follow" button near the uploader name
   showFollowButton: false,
   // Ensure at least this fraction of the source video is visible.
