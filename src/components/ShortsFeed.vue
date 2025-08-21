@@ -3538,7 +3538,7 @@ watch(endBehavior, (val) => {
 }
 @media (min-width: 1024px) {
   .right-controls {
-    right: 24px;
+    right: 72px;
   }
 }
 .comments-btn {
