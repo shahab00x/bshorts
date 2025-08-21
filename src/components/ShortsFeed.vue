@@ -18,6 +18,10 @@ const banActiveByAddress = ref<Record<string, boolean>>({})
 const deletedByHash = ref<Record<string, boolean>>({})
 const itemValidByHash = ref<Record<string, boolean | null>>({})
 const validatingByHash = ref<Record<string, boolean>>({})
+// Moderation flags state per post
+const flagsTotalByHash = ref<Record<string, number>>({})
+const flaggedByHash = ref<Record<string, boolean>>({}) // flagged but under threshold (sensitive overlay)
+const sensitiveDismissedByHash = ref<Record<string, boolean>>({}) // user chose to view
 
 interface PeertubeInfo { hlsUrl: string, apiUrl?: string }
 
@@ -64,6 +68,8 @@ async function validateItem(it: any): Promise<boolean> {
       const rec: any = Array.isArray(resOne)
         ? resOne[0]
         : (Array.isArray(resOne?.data) ? resOne.data[0] : undefined)
+      // Track flags total for this item
+      let totalFlags = 0
       if (rec) {
         const h = (rec?.hash || rec?.video_hash || rec?.txid || rec?.id || '').toString()
         const typeStr = String((rec as any)?.type || (rec as any)?.Type || '').toLowerCase()
@@ -96,6 +102,34 @@ async function validateItem(it: any): Promise<boolean> {
               banActiveByAddress.value[addr] = false
           }
         }
+
+        // Extract and total moderation flags
+        try {
+          const raw = (rec as any)?.flags ?? (rec as any)?.Flags
+          let obj: any = null
+          if (raw && typeof raw === 'string') {
+            try {
+              obj = JSON.parse(raw)
+            }
+            catch {}
+          }
+          else if (raw && typeof raw === 'object') {
+            obj = raw
+          }
+          if (obj && typeof obj === 'object') {
+            for (const v of Object.values(obj)) {
+              const n = typeof v === 'number' ? v : Number(v)
+              if (Number.isFinite(n))
+                totalFlags += n
+            }
+          }
+          if (h)
+            flagsTotalByHash.value[h] = totalFlags
+          if (h && h !== hash)
+            flagsTotalByHash.value[hash] = totalFlags
+          // Per-item flags state is applied below using totals and appConfig
+        }
+        catch {}
       }
     }
     catch {}
@@ -111,8 +145,21 @@ async function validateItem(it: any): Promise<boolean> {
       else
         banned = !!banActiveByAddress.value[addr]
     }
-    const ok = !del && !banned
+    // Respect moderation flags outcome
+    const thr2 = Number((appConfig as any)?.flagsHideThreshold) || 0
+    const hideByFlags = thr2 > 0 && flagsTotalByHash.value[hash] != null
+      ? (flagsTotalByHash.value[hash] >= thr2)
+      : false
+    const ok = !del && !banned && !hideByFlags
     itemValidByHash.value[hash] = ok
+    // Mark sensitive-but-viewable state for overlay
+    if (ok) {
+      const total = flagsTotalByHash.value[hash] || 0
+      flaggedByHash.value[hash] = thr2 > 0 && total > 0 && total < thr2
+    }
+    else {
+      flaggedByHash.value[hash] = false
+    }
     return ok
   }
   catch {
@@ -2012,6 +2059,13 @@ function shouldLoad(idx: number) {
   return true
 }
 
+function isSensitiveBlocked(it: any): boolean {
+  const h = getVideoHash(it)
+  if (!h)
+    return false
+  return !!(flaggedByHash.value[h] && !sensitiveDismissedByHash.value[h])
+}
+
 function shouldPlay(idx: number) {
   const it = items.value[idx]
   if (!it)
@@ -2019,7 +2073,20 @@ function shouldPlay(idx: number) {
   const st = itemValid(it)
   if (st !== true)
     return false
+  // Block autoplay for sensitive content until user opts in
+  if (isSensitiveBlocked(it))
+    return false
   return idx === currentIndex.value && !paused.value
+}
+
+function watchAnyway(it: any) {
+  const h = getVideoHash(it)
+  if (!h)
+    return
+  sensitiveDismissedByHash.value[h] = true
+  // Resume playback if this is the current item
+  if (items.value[currentIndex.value]?.rawPost?.video_hash === h)
+    paused.value = false
 }
 
 function togglePlay() {
@@ -2707,6 +2774,31 @@ watch(endBehavior, (val) => {
           @ended="onVideoEnded(vi.idx)"
         />
         <div v-else class="video-placeholder" />
+
+        <!-- Sensitive content overlay -->
+        <div
+          v-if="itemValid(vi.item) === true && isSensitiveBlocked(vi.item)"
+          class="overlay-sensitive"
+          role="dialog"
+          aria-live="polite"
+        >
+          <div class="sensitive-box">
+            <div class="sensitive-title">
+              Sensitive content
+            </div>
+            <div class="sensitive-desc">
+              This video has been flagged by the community. It may contain sensitive or disturbing content.
+            </div>
+            <div class="sensitive-actions">
+              <button class="watch-anyway-btn" @click.stop="watchAnyway(vi.item)">
+                Watch anyway
+              </button>
+              <div class="sensitive-hint">
+                Or swipe to the next video
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- Debug performance overlay -->
         <PerfOverlay
@@ -3520,6 +3612,65 @@ watch(endBehavior, (val) => {
   width: 100%;
   height: 100%;
   background: #000;
+}
+.overlay-sensitive {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+  z-index: 7; /* above video and overlay elements */
+  pointer-events: none; /* allow swipe gestures to propagate */
+}
+.sensitive-box {
+  pointer-events: auto; /* capture clicks */
+  width: min(520px, 88vw);
+  margin: 0 16px;
+  padding: 18px 16px 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.08),
+    rgba(0, 0, 0, 0.25)
+  );
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+  color: #fff;
+  text-align: center;
+}
+.sensitive-title {
+  font-weight: 700;
+  font-size: 1.1rem;
+  margin-bottom: 8px;
+}
+.sensitive-desc {
+  opacity: 0.9;
+  font-size: 0.95rem;
+}
+.sensitive-actions {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.watch-anyway-btn {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-weight: 700;
+}
+.watch-anyway-btn:active {
+  transform: translateY(1px);
+}
+.sensitive-hint {
+  font-size: 12px;
+  opacity: 0.8;
 }
 .spacer {
   width: 100%;
