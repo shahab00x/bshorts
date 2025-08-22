@@ -2068,7 +2068,8 @@ let touchStartTime = 0
 
 // Pager-mode window derived from current index
 const preloadAheadSafe = computed(() => Math.max(1, Number((appConfig as any)?.preloadAhead) || 0))
-const visibleStart = computed(() => Math.max(0, currentIndex.value - 1))
+const prevWindow = 2
+const visibleStart = computed(() => Math.max(0, currentIndex.value - prevWindow))
 const visibleEnd = computed(() => Math.min(items.value.length - 1, currentIndex.value + preloadAheadSafe.value))
 const visibleIndices = computed(() =>
   Array.from({ length: Math.max(0, visibleEnd.value - visibleStart.value + 1) }, (_, i) => visibleStart.value + i),
@@ -2379,14 +2380,14 @@ function getItemMetaKey(item: VideoItem | any): string | null {
 function inWindow(idx: number) {
   // Render previous 1 and next N items to limit downloads
   // N is configured via appConfig.preloadAhead
-  const start = Math.max(0, currentIndex.value - 1)
+  const start = Math.max(0, currentIndex.value - prevWindow)
   const end = currentIndex.value + preloadAheadSafe.value
   return idx >= start && idx <= end
 }
 
 function shouldLoad(idx: number) {
   // Load previous 1 and next N (from appConfig.preloadAhead)
-  const start = Math.max(0, currentIndex.value - 1)
+  const start = Math.max(0, currentIndex.value - prevWindow)
   const end = currentIndex.value + preloadAheadSafe.value
   const inRange = idx >= start && idx <= end
   if (!inRange)
