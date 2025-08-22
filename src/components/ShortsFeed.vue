@@ -2883,7 +2883,7 @@ function onWheel(ev: WheelEvent) {
   isPaging.value = true
   window.setTimeout(() => {
     isPaging.value = false
-  }, 220)
+  }, 240)
 }
 function onTouchStart(ev: TouchEvent) {
   if (ev.touches.length > 0) {
@@ -2912,7 +2912,7 @@ function onTouchEnd(ev: TouchEvent) {
     isPaging.value = true
     window.setTimeout(() => {
       isPaging.value = false
-    }, 220)
+    }, 240)
   }
 }
 function onKeyDown(ev: KeyboardEvent) {
@@ -3820,7 +3820,7 @@ watch(endBehavior, (val) => {
   contain: content;
   backface-visibility: hidden;
   z-index: 0;
-  transition: transform 220ms ease;
+  transition: transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .pager-item.is-current {
   transform: translateY(0%);
@@ -3982,12 +3982,28 @@ watch(endBehavior, (val) => {
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  /* Strong black outline for readability on transparent backgrounds */
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.9),
+    1px -1px 0 rgba(0, 0, 0, 0.9),
+    -1px 1px 0 rgba(0, 0, 0, 0.9),
+    1px 1px 0 rgba(0, 0, 0, 0.9),
+    0 0 3px rgba(0, 0, 0, 0.8);
+  -webkit-text-stroke: 0.35px rgba(0, 0, 0, 0.7);
 }
 .desc-meta-row {
   opacity: 0.8;
   font-size: 0.9em;
   color: rgba(255, 255, 255, 0.85);
   margin-top: 4px;
+  /* Strong black outline for views + upload date to improve contrast */
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.9),
+    1px -1px 0 rgba(0, 0, 0, 0.9),
+    -1px 1px 0 rgba(0, 0, 0, 0.9),
+    1px 1px 0 rgba(0, 0, 0, 0.9),
+    0 0 3px rgba(0, 0, 0, 0.8);
+  -webkit-text-stroke: 0.35px rgba(0, 0, 0, 0.7);
 }
 .desc-meta {
   opacity: 0.8;
