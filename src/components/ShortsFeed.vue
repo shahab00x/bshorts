@@ -2069,7 +2069,9 @@ let touchStartTime = 0
 // Pager-mode window derived from current index
 const preloadAheadSafe = computed(() => Math.max(1, Number((appConfig as any)?.preloadAhead) || 0))
 const prevWindow = 2
-const visibleStart = computed(() => Math.max(0, currentIndex.value - prevWindow))
+// Keep all previous items mounted so the current card changes DOM position on each swipe
+// This preserves visible transform transitions across many swipes.
+const visibleStart = computed(() => 0)
 const visibleEnd = computed(() => Math.min(items.value.length - 1, currentIndex.value + preloadAheadSafe.value))
 const visibleIndices = computed(() =>
   Array.from({ length: Math.max(0, visibleEnd.value - visibleStart.value + 1) }, (_, i) => visibleStart.value + i),
@@ -3825,15 +3827,15 @@ watch(endBehavior, (val) => {
   transition: transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .pager-item.is-current {
-  transform: translateY(0%);
+  transform: translateY(0%) translateZ(0);
   z-index: 3;
 }
 .pager-item.is-prev {
-  transform: translateY(-100%);
+  transform: translateY(-100%) translateZ(0);
   z-index: 1;
 }
 .pager-item.is-next {
-  transform: translateY(100%);
+  transform: translateY(100%) translateZ(0);
   z-index: 2;
 }
 .overlay {
@@ -3882,8 +3884,8 @@ watch(endBehavior, (val) => {
 }
 .sound-btn {
   pointer-events: auto;
-  margin-bottom: 18vh;
-  margin-bottom: 18dvh;
+  margin-bottom: 28vh;
+  margin-bottom: 28dvh;
   padding: 10px 16px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.6);
