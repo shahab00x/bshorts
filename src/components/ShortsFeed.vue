@@ -29,6 +29,11 @@ const fallbackLoadingByHash = ref<Record<string, boolean>>({})
 const fallbackErrorByHash = ref<Record<string, string | null>>({})
 const fallbackTriedByHash = ref<Record<string, boolean>>({})
 
+// Resolved HLS via prioritized fallback (preferred over JSON-provided hls_link)
+const resolvedHlsByHash = ref<Record<string, string>>({})
+const resolvingHlsByHash = ref<Record<string, boolean>>({})
+const resolveErrByHash = ref<Record<string, string | null>>({})
+
 interface PeertubeInfo { hlsUrl: string, apiUrl?: string }
 
 // Helper: get Bastyon video hash from item
@@ -2018,6 +2023,8 @@ function setVideoRef(el: any, idx: number) {
 
 function getHls(item: VideoItem): string | null {
   const hash = getVideoHash(item)
+  if (hash && resolvedHlsByHash.value[hash])
+    return resolvedHlsByHash.value[hash]
   if (hash && fallbackHlsByHash.value[hash])
     return fallbackHlsByHash.value[hash]
   return getHlsPrimary(item)
@@ -2102,6 +2109,180 @@ function getPeerApiUrl(item: VideoItem | any): string | null {
     ?? item?.rawPost?.peertube?.apiUrl
     ?? null
   )
+}
+
+// Convert a peertube://host/uuid or https://host/videos/watch/uuid to the API endpoint
+function derivePeertubeApiUrl(s: string | null | undefined): string | null {
+  if (typeof s !== 'string' || !s)
+    return null
+  let host = ''
+  let uuid = ''
+  try {
+    if (s.startsWith('peertube://')) {
+      const rest = s.slice('peertube://'.length)
+      const parts = rest.split('/').filter(Boolean)
+      host = parts[0] || ''
+      uuid = parts[1] || ''
+    }
+    else if (s.startsWith('http://') || s.startsWith('https://')) {
+      // Try to parse common watch URL formats and extract host + uuid
+      const u = new URL(s)
+      host = u.host
+      // Known patterns: /videos/watch/<uuid> or /w/<uuid>
+      const seg = u.pathname.split('/').filter(Boolean)
+      const idx = seg.findIndex(p => p.toLowerCase() === 'watch' || p.toLowerCase() === 'videos')
+      if (idx >= 0) {
+        // If 'videos' is followed by 'watch', skip it
+        const candidates = seg.slice(idx + 1)
+        uuid = candidates[candidates.length - 1] || ''
+      }
+      if (!uuid && seg.length)
+        uuid = seg[seg.length - 1] || ''
+    }
+  }
+  catch {}
+  if (!host || !uuid)
+    return null
+  return `https://${host}/api/v1/videos/${uuid}`
+}
+
+// Scan an object for a peertube:// link string
+function findPeertubeLinkInObject(obj: any): string | null {
+  if (!obj || typeof obj !== 'object')
+    return null
+  // Shallow candidates first
+  const direct = [obj?.u, obj?.url, obj?.link, obj?.peertube]
+  for (const d of direct) {
+    if (typeof d === 'string' && d.startsWith('peertube://'))
+      return d
+  }
+  // Deep limited scan for any peertube:// string
+  const seen = new Set<any>()
+  const maxDepth = 4
+  const dfs = (node: any, depth: number): string | null => {
+    if (!node || depth > maxDepth)
+      return null
+    if (typeof node === 'string')
+      return node.startsWith('peertube://') ? node : null
+    if (typeof node !== 'object')
+      return null
+    if (seen.has(node))
+      return null
+    seen.add(node)
+    if (Array.isArray(node)) {
+      for (const el of node) {
+        const r = dfs(el, depth + 1)
+        if (r)
+          return r
+      }
+      return null
+    }
+    for (const v of Object.values(node)) {
+      const r = dfs(v, depth + 1)
+      if (r)
+        return r
+    }
+    return null
+  }
+  return dfs(obj, 0)
+}
+
+function removeItemByHash(hash: string) {
+  const idx = items.value.findIndex(it => getVideoHash(it) === hash)
+  if (idx < 0)
+    return
+  try {
+    items.value.splice(idx, 1)
+    cardRefs.value.splice(idx, 1)
+    videoRefs.value.splice(idx, 1)
+    videoLoading.value.splice(idx, 1)
+    progress.value.splice(idx, 1)
+    buffered.value.splice(idx, 1)
+    if (currentIndex.value >= items.value.length)
+      currentIndex.value = Math.max(0, items.value.length - 1)
+  }
+  catch {}
+}
+
+// Resolve and cache an HLS URL for an item using the prioritized order
+async function resolveHlsForItem(item: any): Promise<void> {
+  const hash = getVideoHash(item)
+  if (!hash)
+    return
+  if (resolvedHlsByHash.value[hash] || resolvingHlsByHash.value[hash])
+    return
+  resolvingHlsByHash.value[hash] = true
+  resolveErrByHash.value[hash] = null
+  try {
+    // 1) Try peertube_api_link from JSON
+    const apiUrl = getPeerApiUrl(item)
+    if (typeof apiUrl === 'string' && apiUrl) {
+      try {
+        const res = await fetch(apiUrl, { cache: 'no-store' })
+        if (res.ok) {
+          const json: any = await res.json()
+          const hls = extractHlsFromAny(json)
+          if (typeof hls === 'string' && hls.includes('.m3u8')) {
+            resolvedHlsByHash.value[hash] = hls
+            return
+          }
+        }
+      }
+      catch (e: any) {
+        resolveErrByHash.value[hash] = e?.message || 'peertube_api_link fetch failed'
+      }
+    }
+
+    // 2) Fallback: getcontent -> derive peertube API -> fetch
+    try {
+      const res: any = await SdkService.rpc('getcontent', [[hash], ''])
+      const rec: any = Array.isArray(res) ? res[0] : (Array.isArray(res?.data) ? res.data[0] : undefined)
+      if (rec) {
+        const link = findPeertubeLinkInObject(rec)
+        const derived = derivePeertubeApiUrl(link)
+        if (derived) {
+          // Store on item for future meta fetching
+          try {
+            item.videoInfo = item.videoInfo || {}
+            item.videoInfo.peertube = item.videoInfo.peertube || {}
+            item.videoInfo.peertube.apiUrl = item.videoInfo.peertube.apiUrl || derived
+            item.rawPost = item.rawPost || {}
+            item.rawPost.peertube = item.rawPost.peertube || {}
+            item.rawPost.peertube.apiUrl = item.rawPost.peertube.apiUrl || derived
+          }
+          catch {}
+          try {
+            const r2 = await fetch(derived, { cache: 'no-store' })
+            if (r2.ok) {
+              const js2: any = await r2.json()
+              const h2 = extractHlsFromAny(js2)
+              if (typeof h2 === 'string' && h2.includes('.m3u8')) {
+                resolvedHlsByHash.value[hash] = h2
+                return
+              }
+            }
+          }
+          catch (e: any) {
+            resolveErrByHash.value[hash] = e?.message || 'derived peertube fetch failed'
+          }
+        }
+      }
+    }
+    catch (e: any) {
+      resolveErrByHash.value[hash] = e?.message || 'getcontent failed'
+    }
+
+    // 3) Final fallback: keep JSON-provided hls_link if present; otherwise drop from playlist
+    const fromJson = getHlsPrimary(item)
+    if (typeof fromJson === 'string' && fromJson.includes('.m3u8'))
+      return
+
+    // 4) All methods failed: remove invalid item so it doesn't appear
+    removeItemByHash(hash)
+  }
+  finally {
+    resolvingHlsByHash.value[hash] = false
+  }
 }
 
 function getItemMetaKey(item: VideoItem | any): string | null {
@@ -2387,10 +2568,10 @@ async function loadPlaylist() {
       loaded = await res.json()
 
     const mapped = Array.isArray(loaded) ? loaded.map(normalizeItem) : []
-    // Keep only items with playable HLS
-    const withHls = mapped.filter((it: VideoItem) => !!getHls(it))
-    // Do NOT upfront-filter; shuffle and let lazy validator handle invalid items
-    const shuffled = shuffleArray(withHls)
+    // Keep candidates that have at least one of: PeerTube API link, direct JSON hls_link, or a Bastyon video hash
+    const candidates = mapped.filter((it: VideoItem) => !!(getPeerApiUrl(it) || getHlsPrimary(it) || getVideoHash(it)))
+    // Do NOT upfront-resolve; shuffle and lazily resolve HLS for visible items
+    const shuffled = shuffleArray(candidates)
     items.value = shuffled
     videoLoading.value = items.value.map(() => false)
     progress.value = items.value.map(() => ({ currentTime: 0, duration: 0 }))
@@ -2842,8 +3023,11 @@ function peerMetaString(item: any): string {
 watch(visibleIndices, (idxs) => {
   for (const idx of idxs) {
     const it = items.value[idx]
-    if (it)
+    if (it) {
       ensurePeerMetaForItem(it)
+      // Proactively resolve HLS for visible items following the prioritized order
+      void resolveHlsForItem(it)
+    }
   }
 }, { immediate: true })
 
@@ -2926,7 +3110,7 @@ watch(endBehavior, (val) => {
           @click="onSectionClick(vi.idx)"
         >
           <HlsVideo
-            v-if="inWindow(vi.idx) && itemValid(vi.item) !== false"
+            v-if="inWindow(vi.idx) && itemValid(vi.item) === true && getHls(vi.item)"
             :ref="(el) => setVideoRef(el, vi.idx)"
             :src="getHls(vi.item)!"
             :loop="endBehavior === 'replay'"
