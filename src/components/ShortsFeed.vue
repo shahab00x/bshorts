@@ -34,6 +34,9 @@ const resolvedHlsByHash = ref<Record<string, string>>({})
 const resolvingHlsByHash = ref<Record<string, boolean>>({})
 const resolveErrByHash = ref<Record<string, string | null>>({})
 
+// Upload timestamp cache (ms) by Bastyon video hash
+const uploadedAtMsByHash = ref<Record<string, number>>({})
+
 interface PeertubeInfo { hlsUrl: string, apiUrl?: string }
 
 // Helper: get Bastyon video hash from item
@@ -111,6 +114,34 @@ async function validateItem(it: any): Promise<boolean> {
               banActiveByAddress.value[addr] = false
           }
         }
+
+        // Opportunistically record upload/update timestamp
+        try {
+          const candidates: any[] = [
+            (rec as any)?.update,
+            (rec as any)?.time,
+            (rec as any)?.timestamp,
+            (rec as any)?.created,
+            (rec as any)?.createdAt,
+            (rec as any)?.date,
+            (rec as any)?.publishedAt,
+          ]
+          let whenMs: number | null = null
+          for (const c of candidates) {
+            const ms = toMsFromSecOrMs(c)
+            if (ms != null) {
+              whenMs = ms
+              break
+            }
+          }
+          if (whenMs != null) {
+            if (h && uploadedAtMsByHash.value[h] == null)
+              uploadedAtMsByHash.value[h] = whenMs
+            if (hash && uploadedAtMsByHash.value[hash] == null)
+              uploadedAtMsByHash.value[hash] = whenMs
+          }
+        }
+        catch {}
 
         // Extract and total moderation flags
         try {
@@ -1076,10 +1107,10 @@ function getCommentText(c: any): string {
           .replace(/\\"/g, '"')
         const trimmed = unescaped.trim()
         if (trimmed)
-          return trimmed
+          return maybeDecodeURIComponent(trimmed)
       }
     }
-    return s
+    return maybeDecodeURIComponent(s)
   }
   // Array case: return first non-empty extracted text
   if (Array.isArray(c)) {
@@ -1456,20 +1487,22 @@ let drawerBodyWasAtTop = false
 const currentItem = computed(() => items.value[currentIndex.value] || null)
 
 function getCaption(it: any): string {
-  return (
+  const s = (
     it?.rawPost?.caption
     ?? it?.rawPost?.title
     ?? it?.caption
     ?? it?.title
     ?? ''
   )
+  return maybeDecodeURIComponent(String(s))
 }
 function getDescription(it: any): string {
-  return (
+  const s = (
     it?.rawPost?.description
     ?? it?.description
     ?? ''
   )
+  return maybeDecodeURIComponent(String(s))
 }
 
 // Helpers for overlay preview: prefer cached RPC caption/description
@@ -1482,11 +1515,13 @@ function getCachedDescStateByItem(it: any): DescState | undefined {
 }
 function getCaptionForItem(it: any): string {
   const st = getCachedDescStateByItem(it)
-  return (st?.caption && st.caption.trim()) ? st.caption : getCaption(it)
+  const s = (st?.caption && st.caption.trim()) ? st.caption : getCaption(it)
+  return maybeDecodeURIComponent(String(s))
 }
 function getDescForItem(it: any): string {
   const st = getCachedDescStateByItem(it)
-  return (st?.text && st.text.trim()) ? st.text : getDescription(it)
+  const s = (st?.text && st.text.trim()) ? st.text : getDescription(it)
+  return maybeDecodeURIComponent(String(s))
 }
 function truncate(str: string, maxLen = 140): string {
   const s = (str || '').trim()
@@ -1538,8 +1573,8 @@ async function fetchDescriptionFor(hash: string, { force = false }: { force?: bo
         || ''
       )
     }
-    st.text = typeof text === 'string' ? text : ''
-    st.caption = typeof caption === 'string' ? caption : ''
+    st.text = typeof text === 'string' ? maybeDecodeURIComponent(text) : ''
+    st.caption = typeof caption === 'string' ? maybeDecodeURIComponent(caption) : ''
     st.fetchedAt = Date.now()
   }
   catch (e: any) {
@@ -1589,6 +1624,56 @@ function linkify(s: string): string {
   // URL regex (simple)
   const urlRe = /(https?:\/\/[^\s<]+)/gi
   return withBreaks.replace(urlRe, m => `<a href="${m}" rel="noopener nofollow">${m}</a>`)
+}
+
+// Decode percent-encoded text safely (handles %XX and '+')
+function maybeDecodeURIComponent(s: string): string {
+  if (typeof s !== 'string' || s.length === 0)
+    return ''
+  // Only attempt if it looks encoded
+  if (!s.includes('%') && !s.includes('+'))
+    return s
+  try {
+    if (s.includes('%'))
+      return decodeURIComponent(s)
+    // Only treat '+' as space if there are no spaces already and it doesn't look like a URL
+    const looksUrl = s.includes('://')
+    const hasSpaces = s.includes(' ')
+    const hasPlusCluster = /\+{2,}/.test(s)
+    if (!looksUrl && !hasSpaces && s.includes('+') && !hasPlusCluster)
+      return s.replace(/\+/g, ' ')
+    return s
+  }
+  catch {
+    return s
+  }
+}
+
+// Convert seconds-or-ms epoch into ms; returns null if invalid
+function toMsFromSecOrMs(input: any): number | null {
+  if (input == null)
+    return null
+  if (typeof input === 'number')
+    return Number.isFinite(input) ? (input < 1e12 ? (input * 1000) : input) : null
+  if (typeof input === 'string') {
+    const n = Number(input.trim())
+    if (!Number.isFinite(n))
+      return null
+    return n < 1e12 ? (n * 1000) : n
+  }
+  return null
+}
+
+// Get best-known upload timestamp for an item (ms)
+function getUploadMsForItem(it: any): number | null {
+  const h = getVideoHash(it)
+  if (h && uploadedAtMsByHash.value[h] != null)
+    return uploadedAtMsByHash.value[h]
+  const cand = (it as any)?.rawPost?.uploadDateMs
+    ?? (it as any)?.uploadDateMs
+    ?? (it as any)?.upload_date
+    ?? (it as any)?.rawPost?.upload_date
+  return toMsFromSecOrMs(cand)
 }
 
 // Detect image URLs within a text string
@@ -2514,6 +2599,20 @@ function normalizeItem(rec: any): any {
   if (out.description == null && rec?.description != null)
     out.description = rec.description
 
+  // Map upload date from playlist entry if present
+  if (rec?.upload_date != null && out.rawPost.uploadDateMs == null) {
+    const ms = toMsFromSecOrMs(rec.upload_date)
+    if (ms != null) {
+      out.rawPost.uploadDateMs = ms
+      try {
+        const h = out?.rawPost?.video_hash
+        if (h && uploadedAtMsByHash.value[h] == null)
+          uploadedAtMsByHash.value[h] = ms
+      }
+      catch {}
+    }
+  }
+
   // Seed caches opportunistically
   try {
     const hash = out?.rawPost?.video_hash
@@ -3008,14 +3107,20 @@ function peerMetaString(item: any): string {
     return ''
   const key = getItemMetaKey(item)
   const st = key ? peerMetaByKey.value[key] : undefined
-  if (!st)
-    return ''
   const parts: string[] = []
-  if (st.views != null)
+  if (st?.views != null)
     parts.push(`${formatCount(st.views)} views`)
-  const full = formatFullDate(st.publishedAt || '')
-  if (full)
-    parts.push(full)
+  let dateStr = ''
+  const published = st?.publishedAt || ''
+  if (published)
+    dateStr = formatFullDate(published)
+  if (!dateStr) {
+    const ms = getUploadMsForItem(item)
+    if (ms != null)
+      dateStr = formatFullDate(ms)
+  }
+  if (dateStr)
+    parts.push(dateStr)
   return parts.join(' · ')
 }
 
