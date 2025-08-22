@@ -2483,9 +2483,12 @@ function onTouchEnd(ev: TouchEvent) {
   const touch = ev.changedTouches[0]
   if (!touch)
     return
+  const now = performance.now()
+  if (isPaging.value || (now - lastNavAt) < 300)
+    return
   const dy = touch.clientY - touchStartY
   const ady = Math.abs(dy)
-  const dt = performance.now() - touchStartTime
+  const dt = now - touchStartTime
   // Horizontal swipe to open Settings disabled; use the Settings button instead
   // Vertical swipe: navigate between videos
   if (ady > 50 && dt < 800) {
@@ -2493,6 +2496,11 @@ function onTouchEnd(ev: TouchEvent) {
       nextPage()
     else
       prevPage()
+    lastNavAt = now
+    isPaging.value = true
+    window.setTimeout(() => {
+      isPaging.value = false
+    }, 220)
   }
 }
 function onKeyDown(ev: KeyboardEvent) {
@@ -3389,16 +3397,20 @@ watch(endBehavior, (val) => {
   transform: translateZ(0);
   contain: content;
   backface-visibility: hidden;
+  z-index: 0;
   transition: transform 220ms ease;
 }
 .pager-item.is-current {
   transform: translateY(0%);
+  z-index: 3;
 }
 .pager-item.is-prev {
   transform: translateY(-100%);
+  z-index: 1;
 }
 .pager-item.is-next {
   transform: translateY(100%);
+  z-index: 2;
 }
 .overlay {
   position: absolute;
