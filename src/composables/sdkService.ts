@@ -254,6 +254,34 @@ export class SdkService {
   }
 
   /**
+   * Returns current blockchain height using a public-friendly call.
+   * Tries `getnodeinfo` (public), falls back to `getblockcount`.
+   */
+  public static async getCurrentHeight(): Promise<number> {
+    this.ensureInitialized()
+    // 1) Public path: getnodeinfo -> lastblock.height
+    try {
+      const info: any = await this.rpc('getnodeinfo', [])
+      const h = info?.lastblock?.height ?? info?.LastBlock?.Height
+      const n = typeof h === 'number' ? h : Number(h)
+      if (Number.isFinite(n) && n >= 0)
+        return Math.floor(n)
+    }
+    catch {}
+
+    // 2) Fallback to core RPC getblockcount (may require private routing)
+    try {
+      const h: any = await this.rpc('getblockcount', [])
+      const n = typeof h === 'number' ? h : Number(h)
+      if (Number.isFinite(n) && n >= 0)
+        return Math.floor(n)
+    }
+    catch {}
+
+    return 0
+  }
+
+  /**
    * Returns true if the host SDK exposes the action() method (i.e., running inside Bastyon host).
    */
   public static supportsAction(): boolean {

@@ -56,9 +56,7 @@ async function validateItem(it: any): Promise<boolean> {
     // Current height used for bans comparison
     let height = 0
     try {
-      const hres: any = await SdkService.rpc('getblockcount', [])
-      const n = typeof hres === 'number' ? hres : Number(hres)
-      height = Number.isFinite(n) ? n : 0
+      height = await SdkService.getCurrentHeight()
     }
     catch {}
 
@@ -325,11 +323,9 @@ async function isAddressBanned(addr?: string | null, currentHeight?: number): Pr
   try {
     // Fetch current height if not provided
     let height = currentHeight
-    if (typeof height !== 'number' || !Number.isFinite(height)) {
-      const hres: any = await SdkService.rpc('getblockcount', [])
-      const n = typeof hres === 'number' ? hres : Number(hres)
-      height = Number.isFinite(n) ? n : 0
-    }
+    if (typeof height !== 'number' || !Number.isFinite(height))
+      height = await SdkService.getCurrentHeight()
+
     const res: any = await SdkService.rpc('getbans', [addr])
     let active = false
     if (Array.isArray(res)) {

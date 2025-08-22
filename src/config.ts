@@ -6,7 +6,7 @@ export const appConfig = {
   // Example: 3 means current + next 3 will be rendered and preloaded.
   preloadAhead: 1,
   // Show performance overlay (FPS, buffer, stalls) for current video
-  debugPerfOverlay: true,
+  debugPerfOverlay: false,
   // Use TikTok-like pager (one page per view, swipe/wheel to change)
   pagerMode: true,
   // Hide content when total moderation flags on the post reach this number.
