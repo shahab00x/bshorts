@@ -2067,8 +2067,9 @@ let touchStartY = 0
 let touchStartTime = 0
 
 // Pager-mode window derived from current index
+const preloadAheadSafe = computed(() => Math.max(1, Number((appConfig as any)?.preloadAhead) || 0))
 const visibleStart = computed(() => Math.max(0, currentIndex.value - 1))
-const visibleEnd = computed(() => Math.min(items.value.length - 1, currentIndex.value + appConfig.preloadAhead))
+const visibleEnd = computed(() => Math.min(items.value.length - 1, currentIndex.value + preloadAheadSafe.value))
 const visibleIndices = computed(() =>
   Array.from({ length: Math.max(0, visibleEnd.value - visibleStart.value + 1) }, (_, i) => visibleStart.value + i),
 )
@@ -2379,14 +2380,14 @@ function inWindow(idx: number) {
   // Render previous 1 and next N items to limit downloads
   // N is configured via appConfig.preloadAhead
   const start = Math.max(0, currentIndex.value - 1)
-  const end = currentIndex.value + appConfig.preloadAhead
+  const end = currentIndex.value + preloadAheadSafe.value
   return idx >= start && idx <= end
 }
 
 function shouldLoad(idx: number) {
   // Load previous 1 and next N (from appConfig.preloadAhead)
   const start = Math.max(0, currentIndex.value - 1)
-  const end = currentIndex.value + appConfig.preloadAhead
+  const end = currentIndex.value + preloadAheadSafe.value
   const inRange = idx >= start && idx <= end
   if (!inRange)
     return false
