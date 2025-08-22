@@ -21,6 +21,7 @@ const emit = defineEmits<{
   (e: 'progress', payload: { currentTime: number, duration: number }): void
   (e: 'buffered', payload: { ranges: { start: number, end: number }[], duration: number }): void
   (e: 'ended'): void
+  (e: 'playbackError', payload: any): void
 }>()
 const videoEl = ref<HTMLVideoElement | null>(null)
 let hls: Hls | null = null
@@ -89,6 +90,20 @@ function emitBuffered() {
   emit('buffered', { ranges, duration })
 }
 
+function onVideoElError() {
+  const el = videoEl.value
+  const err: any = el && (el as any).error
+  try {
+    emit('playbackError', {
+      type: 'media',
+      code: err?.code ?? null,
+      message: (err && typeof err.message === 'string') ? err.message : null,
+    })
+  }
+  catch {}
+  setLoading(false)
+}
+
 function attachVideoEvents() {
   const el = videoEl.value
   if (!el)
@@ -104,6 +119,7 @@ function attachVideoEvents() {
   el.addEventListener('canplay', onReady)
   el.addEventListener('playing', onReady)
   el.addEventListener('play', onReady)
+  el.addEventListener('error', onVideoElError)
   el.addEventListener('progress', () => {
     onReady()
     emitBuffered()
@@ -128,6 +144,7 @@ function detachVideoEvents() {
   el.removeEventListener('playing', onReady)
   el.removeEventListener('play', onReady)
   // progress had an inline listener; safe to ignore explicit removal here
+  el.removeEventListener('error', onVideoElError)
   el.removeEventListener('ended', onEnded)
   el.removeEventListener('durationchange', onReady)
   el.removeEventListener('timeupdate', onTimeUpdate)
@@ -174,6 +191,20 @@ function initHls() {
     })
     hls.loadSource(props.src)
     hls.attachMedia(el)
+    // Bubble Hls.js errors up to parent for fallback handling
+    hls.on(Hls.Events.ERROR, (_evt: any, data: any) => {
+      try {
+        const payload = {
+          type: 'hls',
+          fatal: !!data?.fatal,
+          hlsType: String(data?.type || ''),
+          details: String(data?.details || ''),
+          data,
+        }
+        emit('playbackError', payload)
+      }
+      catch {}
+    })
     // Do not autoplay here; playback driven by shouldPlay
   }
   else if (el.canPlayType('application/vnd.apple.mpegurl')) {
@@ -283,6 +314,8 @@ watch(() => props.shouldPlay, async (play) => {
 }, { immediate: true })
 
 function play() {
+  if (hls)
+    hls.startLoad()
   videoEl.value?.play()
 }
 function pause() {

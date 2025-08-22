@@ -23,6 +23,12 @@ const flagsTotalByHash = ref<Record<string, number>>({})
 const flaggedByHash = ref<Record<string, boolean>>({}) // flagged but under threshold (sensitive overlay)
 const sensitiveDismissedByHash = ref<Record<string, boolean>>({}) // user chose to view
 
+// Fallback HLS cache and state (keyed by Bastyon video hash)
+const fallbackHlsByHash = ref<Record<string, string>>({})
+const fallbackLoadingByHash = ref<Record<string, boolean>>({})
+const fallbackErrorByHash = ref<Record<string, string | null>>({})
+const fallbackTriedByHash = ref<Record<string, boolean>>({})
+
 interface PeertubeInfo { hlsUrl: string, apiUrl?: string }
 
 // Helper: get Bastyon video hash from item
@@ -2011,7 +2017,83 @@ function setVideoRef(el: any, idx: number) {
 }
 
 function getHls(item: VideoItem): string | null {
+  const hash = getVideoHash(item)
+  if (hash && fallbackHlsByHash.value[hash])
+    return fallbackHlsByHash.value[hash]
+  return getHlsPrimary(item)
+}
+
+function getHlsPrimary(item: VideoItem): string | null {
   return item.videoInfo?.peertube?.hlsUrl || item.rawPost?.peertube?.hlsUrl || null
+}
+
+function sameUrl(a?: string | null, b?: string | null): boolean {
+  if (!a || !b)
+    return false
+  return a === b
+}
+
+// Try to extract a .m3u8 URL from an arbitrary content record
+function extractHlsFromAny(obj: any): string | null {
+  if (!obj || typeof obj !== 'object')
+    return null
+  const directCandidates = [
+    obj?.hls_link,
+    obj?.hlsUrl,
+    obj?.hls_url,
+    obj?.hls,
+    obj?.peertube?.hlsUrl,
+    obj?.peertube?.hls,
+    obj?.video?.hls,
+    obj?.videoInfo?.peertube?.hlsUrl,
+    obj?.rawPost?.peertube?.hlsUrl,
+  ]
+  for (const v of directCandidates) {
+    if (typeof v === 'string' && v.includes('.m3u8'))
+      return v
+  }
+  const arrCandidates = [obj?.urls, obj?.links, obj?.media, obj?.videos]
+  for (const arr of arrCandidates) {
+    if (Array.isArray(arr)) {
+      for (const it of arr) {
+        if (typeof it === 'string' && it.includes('.m3u8'))
+          return it
+        if (it && typeof it?.url === 'string' && it.url.includes('.m3u8'))
+          return it.url
+        if (it && typeof it?.href === 'string' && it.href.includes('.m3u8'))
+          return it.href
+      }
+    }
+  }
+  // Deep scan with limited depth to find any string containing .m3u8
+  const seen = new Set<any>()
+  const maxDepth = 4
+  const dfs = (node: any, depth: number): string | null => {
+    if (!node || depth > maxDepth)
+      return null
+    if (typeof node === 'string')
+      return node.includes('.m3u8') ? node : null
+    if (typeof node !== 'object')
+      return null
+    if (seen.has(node))
+      return null
+    seen.add(node)
+    if (Array.isArray(node)) {
+      for (const el of node) {
+        const r = dfs(el, depth + 1)
+        if (r)
+          return r
+      }
+      return null
+    }
+    for (const v of Object.values(node)) {
+      const r = dfs(v, depth + 1)
+      if (r)
+        return r
+    }
+    return null
+  }
+  return dfs(obj, 0)
 }
 
 function getPeerApiUrl(item: VideoItem | any): string | null {
@@ -2335,6 +2417,56 @@ function onVideoProgress(idx: number, payload: { currentTime: number, duration: 
 
 function onVideoBuffered(idx: number, payload: { ranges: { start: number, end: number }[], duration: number }) {
   buffered.value[idx] = payload
+}
+
+async function onPlaybackError(idx: number, item: any, payload: any) {
+  try {
+    const fatal = !!payload?.fatal
+    const type = String(payload?.type || '')
+    // Only attempt fallback on fatal Hls.js errors or native media errors
+    if (!fatal && type !== 'media')
+      return
+    const hash = getVideoHash(item)
+    if (!hash)
+      return
+    if (fallbackHlsByHash.value[hash] || fallbackLoadingByHash.value[hash] || fallbackTriedByHash.value[hash])
+      return
+    fallbackLoadingByHash.value[hash] = true
+    fallbackErrorByHash.value[hash] = null
+    let alt: string | null = null
+    try {
+      const res: any = await SdkService.rpc('getcontent', [[hash], ''])
+      const rec: any = Array.isArray(res)
+        ? res[0]
+        : (Array.isArray(res?.data) ? res.data[0] : undefined)
+      alt = extractHlsFromAny(rec)
+      const primary = getHlsPrimary(item)
+      if (alt && primary && sameUrl(alt, primary))
+        alt = null
+    }
+    catch (e: any) {
+      fallbackErrorByHash.value[hash] = e?.message || 'getcontent failed'
+    }
+    if (alt) {
+      fallbackHlsByHash.value[hash] = alt
+      // HlsVideo will re-initialize on :src change; nudge playback if this is current
+      if (idx === currentIndex.value) {
+        try {
+          videoRefs.value[idx]?.play?.()
+        }
+        catch {}
+      }
+    }
+    else {
+      // Avoid repeated RPC calls for this hash if no alt found
+      fallbackTriedByHash.value[hash] = true
+    }
+  }
+  finally {
+    const h = getVideoHash(item)
+    if (h)
+      fallbackLoadingByHash.value[h] = false
+  }
 }
 
 function onVideoEnded(idx: number) {
@@ -2805,6 +2937,7 @@ watch(endBehavior, (val) => {
             @progress="onVideoProgress(vi.idx, $event)"
             @buffered="onVideoBuffered(vi.idx, $event)"
             @ended="onVideoEnded(vi.idx)"
+            @playback-error="onPlaybackError(vi.idx, vi.item, $event)"
           />
           <div v-else class="video-placeholder" />
 
