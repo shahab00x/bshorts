@@ -20,6 +20,9 @@ export const appConfig = {
   // If cover-cropping would hide more than (1 - minVisibleFraction) of the video,
   // we automatically switch to object-fit: contain to reduce cropping.
   minVisibleFraction: 0.60,
+  // Max number of unique addresses (author + commenters/replies) to preload avatars for per post.
+  // Helps cap memory and network usage when posts have large comment sets.
+  avatarPreloadCap: 30,
 
   // Default language and available language playlists
   defaultLanguage: 'en',

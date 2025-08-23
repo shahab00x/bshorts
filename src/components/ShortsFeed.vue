@@ -532,20 +532,32 @@ function collectAddressesForHash(hash: string): Set<string> {
 async function ensureAvatarsReadyForHash(hash: string) {
   if (!hash)
     return
+  // Gate: only prepare avatars when comments drawer is open
+  if (!showCommentsDrawer.value)
+    return
   if (avatarsReadyByHash.value[hash] || avatarsPreparingByHash.value[hash])
     return
   avatarsPreparingByHash.value[hash] = true
   try {
-    const addrs = collectAddressesForHash(hash)
+    // Collect and cap addresses to preload
+    let addrs = collectAddressesForHash(hash)
+    const capRaw = Number((appConfig as any)?.avatarPreloadCap)
+    const cap = Number.isFinite(capRaw) && capRaw > 0 ? capRaw : Infinity
+    if (addrs.size > cap)
+      addrs = new Set(Array.from(addrs).slice(0, cap))
+
     // Ensure profile URLs are fetched
     await fetchProfiles(addrs)
     await nextTick()
-    // Gather URLs and preload images
+
+    // Gather URLs and preload images (respect cap)
     const urls: string[] = []
     for (const a of addrs) {
       const u = avatarsByAddress.value[a]
       if (u)
         urls.push(u)
+      if (urls.length >= cap && cap !== Infinity)
+        break
     }
     await Promise.all(urls.map(u => preloadImage(u)))
     avatarsReadyByHash.value[hash] = true
