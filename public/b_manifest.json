@@ -1,7 +1,7 @@
 {
   "id": "bshorts.bastyon",
   "name": "Bastyon Shorts",
-  "description": "Video player for Bastyon short videos under 2.5 minutes. Swipe right for settings.",
+  "description": "Video player for Bastyon short videos under 2.5 minutes.",
   "author": "PUg3fuJRCeN1nae2BnZQzW6SodDxRovNS2",
   "start_url": "index.html",
   "version": "1.0.0",
