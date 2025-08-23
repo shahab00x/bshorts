@@ -6,6 +6,7 @@ import PerfOverlay from '~/components/PerfOverlay.vue'
 import LoadingSpinner from '~/components/LoadingSpinner.vue'
 import { appConfig } from '~/config'
 import { SdkService } from '~/composables'
+import { wrapRefAsLru } from '~/composables/lruCache'
 
 // Moved up: caches used by validators and helpers to satisfy no-use-before-define
 const avatarsByAddress = ref<Record<string, string>>({})
@@ -36,6 +37,8 @@ const resolveErrByHash = ref<Record<string, string | null>>({})
 
 // Upload timestamp cache (ms) by Bastyon video hash
 const uploadedAtMsByHash = ref<Record<string, number>>({})
+
+// (LRU wrappers are initialized later, after all caches are declared)
 
 interface PeertubeInfo { hlsUrl: string, apiUrl?: string }
 
@@ -394,6 +397,39 @@ async function isAddressBanned(addr?: string | null, currentHeight?: number): Pr
 // Descriptions cache (by post hash)
 interface DescState { text: string, caption?: string, loading: boolean, error: string | null, fetchedAt: number }
 const descriptionsByHash = ref<Record<string, DescState>>({})
+
+// ---- LRU wrappers (size + TTL) for key caches ----
+// Reasonable defaults tuned for memory usage and UX. Adjust as needed.
+const __HOUR = 60 * 60 * 1000
+const __DAY = 24 * __HOUR
+
+const cacheAvatars = wrapRefAsLru(avatarsByAddress, { maxSize: 500, ttlMs: 12 * __HOUR })
+const cacheNames = wrapRefAsLru(namesByAddress, { maxSize: 500, ttlMs: 12 * __HOUR })
+const cacheReps = wrapRefAsLru(reputationsByAddress, { maxSize: 800, ttlMs: 1 * __DAY })
+const cacheAddrByHash = wrapRefAsLru(addressByHash, { maxSize: 600, ttlMs: 12 * __HOUR })
+// Comments/Descriptions can be large; keep tighter caps
+const cacheComments = wrapRefAsLru(commentsByHash, { maxSize: 150, ttlMs: 1 * __HOUR })
+const cacheDescs = wrapRefAsLru(descriptionsByHash, { maxSize: 300, ttlMs: 6 * __HOUR })
+const cacheVisibleCounts = wrapRefAsLru(visibleCountByHash, { maxSize: 600, ttlMs: 2 * __HOUR })
+const cacheRepLoading = wrapRefAsLru(repLoadingByHash, { maxSize: 600, ttlMs: 15 * 60 * 1000 })
+const cacheRepError = wrapRefAsLru(repErrorByHash, { maxSize: 600, ttlMs: 30 * 60 * 1000 })
+
+function pruneAllCaches() {
+  const now = Date.now()
+  cacheAvatars.prune(now)
+  cacheNames.prune(now)
+  cacheReps.prune(now)
+  cacheAddrByHash.prune(now)
+  cacheComments.prune(now)
+  cacheDescs.prune(now)
+  cacheVisibleCounts.prune(now)
+  cacheRepLoading.prune(now)
+  cacheRepError.prune(now)
+}
+
+// Lightweight pruning triggers
+watch(currentIndex, pruneAllCaches)
+watch(items, pruneAllCaches)
 
 // Ensure we know the author address for a given hash (without fetching reputation)
 async function ensureAuthorAddressByHash(hash: string): Promise<string | null> {
