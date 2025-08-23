@@ -2363,26 +2363,7 @@ async function resolveHlsForItem(item: any): Promise<void> {
   resolvingHlsByHash.value[hash] = true
   resolveErrByHash.value[hash] = null
   try {
-    // 1) Try peertube_api_link from JSON
-    const apiUrl = getPeerApiUrl(item)
-    if (typeof apiUrl === 'string' && apiUrl) {
-      try {
-        const res = await fetch(apiUrl, { cache: 'no-store' })
-        if (res.ok) {
-          const json: any = await res.json()
-          const hls = extractHlsFromAny(json)
-          if (typeof hls === 'string' && hls.includes('.m3u8')) {
-            resolvedHlsByHash.value[hash] = hls
-            return
-          }
-        }
-      }
-      catch (e: any) {
-        resolveErrByHash.value[hash] = e?.message || 'peertube_api_link fetch failed'
-      }
-    }
-
-    // 2) Fallback: getcontent -> derive peertube API -> fetch
+    // 1) First try: getcontent -> derive PeerTube API -> fetch HLS
     try {
       const res: any = await SdkService.rpc('getcontent', [[hash], ''])
       const rec: any = Array.isArray(res) ? res[0] : (Array.isArray(res?.data) ? res.data[0] : undefined)
@@ -2419,6 +2400,25 @@ async function resolveHlsForItem(item: any): Promise<void> {
     }
     catch (e: any) {
       resolveErrByHash.value[hash] = e?.message || 'getcontent failed'
+    }
+
+    // 2) Fallback: try peertube_api_link from JSON
+    const apiUrl = getPeerApiUrl(item)
+    if (typeof apiUrl === 'string' && apiUrl) {
+      try {
+        const res = await fetch(apiUrl, { cache: 'no-store' })
+        if (res.ok) {
+          const json: any = await res.json()
+          const hls = extractHlsFromAny(json)
+          if (typeof hls === 'string' && hls.includes('.m3u8')) {
+            resolvedHlsByHash.value[hash] = hls
+            return
+          }
+        }
+      }
+      catch (e: any) {
+        resolveErrByHash.value[hash] = e?.message || 'peertube_api_link fetch failed'
+      }
     }
 
     // 3) Final fallback: keep JSON-provided hls_link if present; otherwise drop from playlist
