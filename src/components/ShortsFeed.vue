@@ -7,6 +7,7 @@ import LoadingSpinner from '~/components/LoadingSpinner.vue'
 import { appConfig } from '~/config'
 import { SdkService } from '~/composables'
 import { wrapRefAsLru } from '~/composables/lruCache'
+import { urlRewriter } from '~/helpers/urlRewriter'
 
 // Moved up: caches used by validators and helpers to satisfy no-use-before-define
 const avatarsByAddress = ref<Record<string, string>>({})
@@ -1822,6 +1823,17 @@ function extractImageUrls(c: any): string[] {
   return Array.from(urls).slice(0, 6)
 }
 
+// Rewrite image URLs to avoid SSL Common Name errors
+function rewriteImageUrl(url: string): string {
+  try {
+    return urlRewriter(url)
+  }
+  catch (e) {
+    console.warn('Failed to rewrite URL:', url, e)
+    return url
+  }
+}
+
 const currentDescState = computed(() => {
   const h = currentVideoHash.value
   return h ? descriptionsByHash.value[h] : undefined
@@ -3004,7 +3016,7 @@ const wasPlayingBeforeImageViewer = ref(false)
 
 function openCommentImages(c: any, startIdx = 0) {
   try {
-    const urls = extractImageUrls(c)
+    const urls = extractImageUrls(c).map(url => rewriteImageUrl(url))
     if (!urls || urls.length === 0)
       return
     wasPlayingBeforeImageViewer.value = isCurrentVideoPlaying()
@@ -3565,7 +3577,7 @@ watch(endBehavior, (val) => {
                       :aria-label="`View image ${ui + 1}`"
                       @click.prevent.stop="openCommentImages(c, ui)"
                     >
-                      <img :src="u" loading="lazy" decoding="async" alt="attachment">
+                      <img :src="rewriteImageUrl(u)" loading="lazy" decoding="async" alt="attachment">
                     </button>
                   </div>
                   <div class="comment-actions" aria-label="Comment ratings (read-only)">
@@ -3610,7 +3622,7 @@ watch(endBehavior, (val) => {
                                 :aria-label="`View image ${ui + 1}`"
                                 @click.prevent.stop="openCommentImages(rc, ui)"
                               >
-                                <img :src="u" loading="lazy" decoding="async" alt="attachment">
+                                <img :src="rewriteImageUrl(u)" loading="lazy" decoding="async" alt="attachment">
                               </button>
                             </div>
                             <div class="comment-actions reply-actions" aria-label="Reply ratings (read-only)">
