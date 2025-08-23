@@ -619,7 +619,15 @@ function resolveCommentAddress(c: any): string | null {
 function getAddressAvatar(address?: string | null): string {
   if (!address)
     return ''
-  return avatarsByAddress.value[address] || ''
+  const u = avatarsByAddress.value[address] || ''
+  if (!u)
+    return ''
+  try {
+    return urlRewriter(u)
+  }
+  catch {
+    return u
+  }
 }
 
 // Helper mappers for template
