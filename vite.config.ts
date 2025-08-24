@@ -84,6 +84,53 @@ export default defineConfig({
           }
         })
       },
+      // Also enable the same endpoint when serving the built app via `vite preview`
+      configurePreviewServer(server) {
+        server.middlewares.use('/api/feedback', async (req, res) => {
+          if (req.method !== 'POST') {
+            res.statusCode = 405
+            res.setHeader('Content-Type', 'text/plain')
+            res.end('Method Not Allowed')
+            return
+          }
+          try {
+            const chunks: Uint8Array[] = []
+            req.on('data', (c: Uint8Array) => chunks.push(c))
+            req.on('end', async () => {
+              try {
+                const raw = Buffer.concat(chunks).toString('utf8')
+                const data = raw ? JSON.parse(raw) : {}
+                const text = typeof data?.text === 'string' ? data.text.trim() : ''
+                if (!text) {
+                  res.statusCode = 400
+                  res.setHeader('Content-Type', 'text/plain')
+                  res.end('Missing feedback text')
+                  return
+                }
+                const dir = path.resolve(__dirname, 'feedbacks')
+                await fs.mkdir(dir, { recursive: true })
+                const ts = new Date().toISOString().replace(/[:.]/g, '-')
+                const file = path.join(dir, `feedback-${ts}.txt`)
+                const content = `${new Date().toISOString()}\n\n${text}\n`
+                await fs.writeFile(file, content, 'utf8')
+                res.statusCode = 200
+                res.setHeader('Content-Type', 'text/plain')
+                res.end('OK')
+              }
+              catch (e) {
+                res.statusCode = 500
+                res.setHeader('Content-Type', 'text/plain')
+                res.end('Failed to save feedback')
+              }
+            })
+          }
+          catch (e) {
+            res.statusCode = 500
+            res.setHeader('Content-Type', 'text/plain')
+            res.end('Failed to process request')
+          }
+        })
+      },
     },
     VueMacros({
       defineOptions: false,
