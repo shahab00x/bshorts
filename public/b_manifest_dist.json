@@ -1,8 +1,8 @@
 {
-  "id": "bshorts5.bastyon.ir",
+  "id": "bshorts.bastyon",
   "name": "Bastyon Shorts",
   "description": "Video player for Bastyon short videos under 2.5 minutes.",
-  "author": "PXN76kJG5sCGTwMpRfXH5oqkDzJQKNsYk4",
+  "author": "PUg3fuJRCeN1nae2BnZQzW6SodDxRovNS2",
   "start_url": "index.html",
   "version": "1.0.0",
   "scope": "bshorts-app.bastyon.ir",
