@@ -5,7 +5,7 @@
   "author": "PXN76kJG5sCGTwMpRfXH5oqkDzJQKNsYk4",
   "start_url": "index.html",
   "version": "1.0.0",
-  "scope": "bshorts-app.bastyon.ir",
+  "scope": "apptest.bastyon.ir",
   "permissions": [
     "externallink"
   ]
